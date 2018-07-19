@@ -83,6 +83,8 @@ private:
   TH2D* h_allStrips_area[36][2];
   TH2D* h_globalPosOnGem;
   TH1D* h_instLumi;
+  TH1D* h_time;
+  TH1D* h_pileup;
   TH1D* h_clusterSize, *h_totalStrips, *h_bxtotal;
   TH1D* h_inEta[36][2];
   TH1D* h_hitEta[36][2];
@@ -117,7 +119,9 @@ SliceTestAnalysis::SliceTestAnalysis(const edm::ParameterSet& iConfig) :
 
   h_clusterSize=fs->make<TH1D>(Form("clusterSize"),"clusterSize",100,0,100);
   h_totalStrips=fs->make<TH1D>(Form("totalStrips"),"totalStrips",200,0,200);
-  h_instLumi=fs->make<TH1D>(Form("instLumi"),"instLumi",20000,0,2000000000);
+  h_instLumi=fs->make<TH1D>(Form("instLumi"),"instLumi",100,0,10);
+  h_time=fs->make<TH1D>(Form("time"),"time",20000,0,2);
+  h_pileup=fs->make<TH1D>(Form("pileup"),"pileup",80,0,80);
   h_bxtotal=fs->make<TH1D>(Form("bx"),"bx",31,-15,15);
 
   h_globalPosOnGem = fs->make<TH2D>(Form("onGEM"), "onGEM", 100, -100, 100, 100, -100, 100);
@@ -357,8 +361,10 @@ SliceTestAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& iSet
   //   std::cout << "gemRecHits->size() " << gemRecHits->size() <<std::endl;
   // }
   int totalStrips = 0;
-  auto instLumi = (lumiScalers->at(0)).instantLumi();
+  auto instLumi = (lumiScalers->at(0)).instantLumi()/10000;
+  auto pileup = (lumiScalers->at(0)).pileup();
   h_instLumi->Fill(instLumi);
+  h_pileup->Fill(pileup);
   for (auto ch : GEMGeometry_->chambers()) {
     for(auto roll : ch->etaPartitions()) {
       GEMDetId rId = roll->id();
@@ -381,7 +387,7 @@ SliceTestAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& iSet
 	for (int nstrip = hit->firstClusterStrip(); nstrip < hit->firstClusterStrip()+hit->clusterSize(); ++nstrip) {
 	  totalStrips++;
 	  h_allStrips[rId.chamber()][rId.layer()-1]->Fill(nstrip, rId.roll());
-	  h_allStrips_area[rId.chamber()][rId.layer()-1]->Fill(nstrip, rId.roll(), 1/(trArea));
+	  h_allStrips_area[rId.chamber()][rId.layer()-1]->Fill(nstrip, rId.roll(), 1/(trArea*instLumi));
 	}
 
 	b_firstStrip = hit->firstClusterStrip();
