@@ -24,6 +24,7 @@
 #include "TrackPropagation/SteppingHelixPropagator/interface/SteppingHelixPropagator.h"
 #include "MagneticField/Engine/interface/MagneticField.h"
 
+#include "DataFormats/Scalers/interface/LumiScalers.h"
 #include "DataFormats/PatCandidates/interface/Muon.h"
 #include "DataFormats/VertexReco/interface/Vertex.h"
 #include "DataFormats/VertexReco/interface/VertexFwd.h"
@@ -35,6 +36,7 @@
 #include "Geometry/Records/interface/MuonGeometryRecord.h"
 #include "Geometry/CommonDetUnit/interface/GeomDet.h"
 #include "Geometry/CommonTopologies/interface/StripTopology.h"
+#include "Geometry/CommonTopologies/interface/TrapezoidalStripTopology.h"
 
 #include "Geometry/Records/interface/MuonGeometryRecord.h"
 
@@ -68,6 +70,7 @@ private:
   edm::EDGetTokenT<GEMRecHitCollection> gemRecHits_;
   edm::EDGetTokenT<edm::View<reco::Muon> > muons_;
   edm::EDGetTokenT<reco::VertexCollection> vertexCollection_;
+  edm::EDGetTokenT<LumiScalersCollection> lumiScalers_;
   edm::Service<TFileService> fs;
 
   MuonServiceProxy* theService_;
@@ -77,7 +80,9 @@ private:
   
   TH2D* h_firstStrip[36][2];
   TH2D* h_allStrips[36][2];
+  TH2D* h_allStrips_area[36][2];
   TH2D* h_globalPosOnGem;
+  TH1D* h_instLumi;
   TH1D* h_clusterSize, *h_totalStrips, *h_bxtotal;
   TH1D* h_inEta[36][2];
   TH1D* h_hitEta[36][2];
@@ -106,11 +111,13 @@ SliceTestAnalysis::SliceTestAnalysis(const edm::ParameterSet& iConfig) :
   gemRecHits_ = consumes<GEMRecHitCollection>(iConfig.getParameter<edm::InputTag>("gemRecHits"));
   muons_ = consumes<View<reco::Muon> >(iConfig.getParameter<InputTag>("muons"));
   vertexCollection_ = consumes<reco::VertexCollection>(iConfig.getParameter<edm::InputTag>("vertexCollection"));
+  lumiScalers_ = consumes<LumiScalersCollection>(iConfig.getParameter<edm::InputTag>("lumiScalers"));
   edm::ParameterSet serviceParameters = iConfig.getParameter<edm::ParameterSet>("ServiceParameters");
   theService_ = new MuonServiceProxy(serviceParameters);
 
   h_clusterSize=fs->make<TH1D>(Form("clusterSize"),"clusterSize",100,0,100);
   h_totalStrips=fs->make<TH1D>(Form("totalStrips"),"totalStrips",200,0,200);
+  h_instLumi=fs->make<TH1D>(Form("instLumi"),"instLumi",20000,0,2000000000);
   h_bxtotal=fs->make<TH1D>(Form("bx"),"bx",31,-15,15);
 
   h_globalPosOnGem = fs->make<TH2D>(Form("onGEM"), "onGEM", 100, -100, 100, 100, -100, 100);
@@ -150,11 +157,17 @@ SliceTestAnalysis::SliceTestAnalysis(const edm::ParameterSet& iConfig) :
       h_allStrips[ichamber][ilayer]->GetXaxis()->SetTitle("strip");
       h_allStrips[ichamber][ilayer]->GetYaxis()->SetTitle("iEta");
 
+      h_allStrips_area[ichamber][ilayer] = fs->make<TH2D>(Form("allStrips ch %i lay %i area",ichamber, ilayer),"allStrips",384,1,385,8,0.5,8.5);
+      h_allStrips_area[ichamber][ilayer]->GetXaxis()->SetTitle("strip");
+      h_allStrips_area[ichamber][ilayer]->GetYaxis()->SetTitle("iEta");
+
       h_inEta[ichamber][ilayer] = fs->make<TH1D>(Form("inEta ch %i lay %i",ichamber, ilayer),"inEta",8,0.5,8.5);
       h_hitEta[ichamber][ilayer] = fs->make<TH1D>(Form("hitEta ch %i lay %i",ichamber, ilayer),"hitEta",8,0.5,8.5);
       h_trkEta[ichamber][ilayer] = fs->make<TH1D>(Form("trkEta ch %i lay %i",ichamber, ilayer),"trkEta",8,0.5,8.5);
     }
   }
+
+
 }
 
 SliceTestAnalysis::~SliceTestAnalysis()
@@ -183,7 +196,7 @@ SliceTestAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& iSet
   edm::ESHandle<GEMGeometry> hGeom;
   iSetup.get<MuonGeometryRecord>().get(hGeom);
   const GEMGeometry* GEMGeometry_ = &*hGeom;
-
+  
   iSetup.get<TransientTrackRecord>().get("TransientTrackBuilder",ttrackBuilder_);
   // iSetup.get<TrackingComponentsRecord>().get("SteppingHelixPropagatorAny",propagator_);
   // iSetup.get<IdealMagneticFieldRecord>().get(bField_); 
@@ -199,6 +212,9 @@ SliceTestAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& iSet
     vertexCollection->size();
     //    std::cout << "vertex->size() " << vertexCollection->size() <<std::endl;
   }
+
+  edm::Handle<LumiScalersCollection> lumiScalers;
+  iEvent.getByToken( lumiScalers_, lumiScalers );
 
   Handle<View<reco::Muon> > muons;
   iEvent.getByToken(muons_, muons);
@@ -341,11 +357,18 @@ SliceTestAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& iSet
   //   std::cout << "gemRecHits->size() " << gemRecHits->size() <<std::endl;
   // }
   int totalStrips = 0;
-
+  auto instLumi = (lumiScalers->at(0)).instantLumi();
+  h_instLumi->Fill(instLumi);
   for (auto ch : GEMGeometry_->chambers()) {
     for(auto roll : ch->etaPartitions()) {
       GEMDetId rId = roll->id();
 
+      const int nstrips(roll->nstrips());
+      const TrapezoidalStripTopology* top_(dynamic_cast<const TrapezoidalStripTopology*>(&(roll->topology())));
+      const float striplength(top_->stripLength());
+      double trStripArea = (roll->pitch()) * striplength;
+      double trArea = trStripArea * nstrips;
+      
       //std::cout << "rId " << rId <<std::endl;
       auto recHitsRange = gemRecHits->get(rId); 
       auto gemRecHit = recHitsRange.first;
@@ -358,6 +381,7 @@ SliceTestAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& iSet
 	for (int nstrip = hit->firstClusterStrip(); nstrip < hit->firstClusterStrip()+hit->clusterSize(); ++nstrip) {
 	  totalStrips++;
 	  h_allStrips[rId.chamber()][rId.layer()-1]->Fill(nstrip, rId.roll());
+	  h_allStrips_area[rId.chamber()][rId.layer()-1]->Fill(nstrip, rId.roll(), 1/(trArea));
 	}
 
 	b_firstStrip = hit->firstClusterStrip();

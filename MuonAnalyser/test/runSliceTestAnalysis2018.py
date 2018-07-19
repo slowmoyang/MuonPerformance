@@ -56,5 +56,6 @@ process.SliceTestAnalysis = cms.EDAnalyzer('SliceTestAnalysis',
     gemRecHits = cms.InputTag("gemRecHits"),
     muons = cms.InputTag("muons"),
     vertexCollection = cms.InputTag("offlinePrimaryVertices"),
+    lumiScalers = cms.InputTag("scalersRawToDigi"),
 )
 process.p = cms.Path(process.SliceTestAnalysis)
