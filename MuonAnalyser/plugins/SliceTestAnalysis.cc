@@ -30,6 +30,7 @@
 #include "DataFormats/VertexReco/interface/VertexFwd.h"
 #include "DataFormats/GEMRecHit/interface/GEMRecHitCollection.h"
 #include "DataFormats/MuonDetId/interface/GEMDetId.h"
+#include "DataFormats/GEMDigi/interface/GEMDigiCollection.h"
 #include "Geometry/GEMGeometry/interface/GEMGeometry.h"
 #include "Geometry/GEMGeometry/interface/GEMEtaPartition.h"
 #include "Geometry/GEMGeometry/interface/GEMEtaPartitionSpecs.h"
@@ -68,6 +69,7 @@ private:
 
   // ----------member data ---------------------------
   edm::EDGetTokenT<GEMRecHitCollection> gemRecHits_;
+  edm::EDGetTokenT<GEMDigiCollection> gemDigis_;
   edm::EDGetTokenT<edm::View<reco::Muon> > muons_;
   edm::EDGetTokenT<reco::VertexCollection> vertexCollection_;
   edm::EDGetTokenT<LumiScalersCollection> lumiScalers_;
@@ -111,6 +113,7 @@ SliceTestAnalysis::SliceTestAnalysis(const edm::ParameterSet& iConfig) :
   nGEMTrackWithMuon(0)
 { 
   gemRecHits_ = consumes<GEMRecHitCollection>(iConfig.getParameter<edm::InputTag>("gemRecHits"));
+  gemDigis_ = consumes<GEMDigiCollection>(iConfig.getParameter<edm::InputTag>("gemDigis"));
   muons_ = consumes<View<reco::Muon> >(iConfig.getParameter<InputTag>("muons"));
   vertexCollection_ = consumes<reco::VertexCollection>(iConfig.getParameter<edm::InputTag>("vertexCollection"));
   lumiScalers_ = consumes<LumiScalersCollection>(iConfig.getParameter<edm::InputTag>("lumiScalers"));
@@ -209,6 +212,9 @@ SliceTestAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& iSet
   
   edm::Handle<GEMRecHitCollection> gemRecHits;  
   iEvent.getByToken(gemRecHits_, gemRecHits);
+
+  edm::Handle<GEMDigiCollection> gemDigis;  
+  iEvent.getByToken(gemDigis_, gemDigis);
 
   edm::Handle<reco::VertexCollection> vertexCollection;
   iEvent.getByToken( vertexCollection_, vertexCollection );
