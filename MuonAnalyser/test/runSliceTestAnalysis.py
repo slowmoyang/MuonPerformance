@@ -38,6 +38,7 @@ process.TFileService = cms.Service("TFileService",fileName = cms.string("histo.r
 process.SliceTestAnalysis = cms.EDAnalyzer('SliceTestAnalysis',
     process.MuonServiceProxy,
     gemRecHits = cms.InputTag("gemRecHits"),
+    gemDigis = cms.InputTag("muonGEMDigis"),
     muons = cms.InputTag("muons"),
     vertexCollection = cms.InputTag("offlinePrimaryVertices"),
     lumiScalers = cms.InputTag("scalersRawToDigi"),

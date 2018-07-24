@@ -97,10 +97,11 @@ private:
   TTree *t_hit;
   int b_run, b_lumi, b_event;
   int b_firstStrip, b_nStrips, b_chamber, b_layer, b_etaPartition, b_muonQuality;
-  float b_x, b_y, b_z;
+  float b_x, b_y, b_z, b_area;
 
   int nEvents, nMuonTotal, nGEMFiducialMuon, nGEMTrackWithMuon;
-  int b_nMuons, b_nMuonsWithGEMHit;
+  int b_nMuons, b_nMuonsWithGEMHit, b_nBx;
+  float b_instLumi;
 
   int b_nGEMHits;
 
@@ -127,7 +128,7 @@ SliceTestAnalysis::SliceTestAnalysis(const edm::ParameterSet& iConfig) :
   h_instLumi=fs->make<TH1D>(Form("instLumi"),"instLumi",100,0,10);
   h_time=fs->make<TH1D>(Form("time"),"time",20000,0,2);
   h_pileup=fs->make<TH1D>(Form("pileup"),"pileup",80,0,80);
-  h_bxtotal=fs->make<TH1D>(Form("bx"),"bx",31,-15,15);
+  h_bxtotal=fs->make<TH1D>(Form("bx"),"bx",1000,0,1000);
 
   h_globalPosOnGem = fs->make<TH2D>(Form("onGEM"), "onGEM", 100, -100, 100, 100, -100, 100);
 
@@ -140,6 +141,8 @@ SliceTestAnalysis::SliceTestAnalysis(const edm::ParameterSet& iConfig) :
   t_event->Branch("nGEMHits", &b_nGEMHits, "nGEMHits/I");
   t_event->Branch("run", &b_run, "run/I");
   t_event->Branch("lumi", &b_lumi, "lumi/I");
+  t_event->Branch("nBx", &b_nBx, "nBx/I");
+  t_event->Branch("instLumi", &b_instLumi, "instLumi/F");
 
   h_res_x=fs->make<TH1D>(Form("res_x"),"res_x",100,-50,50);
   h_res_y=fs->make<TH1D>(Form("res_y"),"res_y",100,-50,50);
@@ -159,6 +162,7 @@ SliceTestAnalysis::SliceTestAnalysis(const edm::ParameterSet& iConfig) :
   t_hit->Branch("x", &b_x, "x/F");
   t_hit->Branch("y", &b_y, "y/F");
   t_hit->Branch("z", &b_z, "z/F");
+  t_hit->Branch("area", &b_area, "area/F");
 
   for (int ichamber=0; ichamber<36;++ichamber) {
   // for (int ichamber=27; ichamber<=30;++ichamber) {
@@ -199,7 +203,10 @@ void
 SliceTestAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup)
 {
   nEvents++;
-
+  
+  int maxBx = 0;
+  int minBx = 0;
+  
   b_nMuons = 0;
   b_nMuonsWithGEMHit = 0;
   b_nGEMHits = 0;
@@ -388,6 +395,7 @@ SliceTestAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& iSet
   auto instLumi = (lumiScalers->at(0)).instantLumi()/10000;
   auto pileup = (lumiScalers->at(0)).pileup();
   h_instLumi->Fill(instLumi);
+  b_instLumi = instLumi;
   h_pileup->Fill(pileup);
   for (auto ch : GEMGeometry_->chambers()) {
     for(auto roll : ch->etaPartitions()) {
@@ -404,15 +412,16 @@ SliceTestAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& iSet
       auto gemRecHit = recHitsRange.first;
       for (auto hit = gemRecHit; hit != recHitsRange.second; ++hit) {
 
-	h_hitEta[rId.chamber()][rId.layer()]->Fill(rId.roll());
+//	h_hitEta[rId.chamber()][rId.layer()]->Fill(rId.roll());
 	h_firstStrip[rId.chamber()][rId.layer()-1]->Fill(hit->firstClusterStrip(), rId.roll());
 	h_clusterSize->Fill(hit->clusterSize());
 	h_bxtotal->Fill(hit->BunchX());
 	for (int nstrip = hit->firstClusterStrip(); nstrip < hit->firstClusterStrip()+hit->clusterSize(); ++nstrip) {
 	  totalStrips++;
-	  h_allStrips[rId.chamber()][rId.layer()-1]->Fill(nstrip, rId.roll());
-	  h_allStrips_area[rId.chamber()][rId.layer()-1]->Fill(nstrip, rId.roll(), 1/(trArea*instLumi));
+//	  h_allStrips[rId.chamber()][rId.layer()-1]->Fill(nstrip, rId.roll());
+//	  h_allStrips_area[rId.chamber()][rId.layer()-1]->Fill(nstrip, rId.roll(), 1/(trArea*instLumi));
 	}
+        b_area = trArea;
 
 	b_firstStrip = hit->firstClusterStrip();
 	b_nStrips = hit->clusterSize();
@@ -447,6 +456,34 @@ SliceTestAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& iSet
       }
     }
   }
+
+  for (auto ch : GEMGeometry_->chambers()) {
+    for(auto roll : ch->etaPartitions()) {
+      GEMDetId rId = roll->id();
+
+      const int nstrips(roll->nstrips());
+      const TrapezoidalStripTopology* top_(dynamic_cast<const TrapezoidalStripTopology*>(&(roll->topology())));
+      const float striplength(top_->stripLength());
+      double trStripArea = (roll->pitch()) * striplength;
+      double trArea = trStripArea * nstrips;
+      
+      auto digisRange = gemDigis->get(rId); 
+      auto gemDigi = digisRange.first;
+      for (auto hit = gemDigi; hit != digisRange.second; ++hit) {
+
+	h_hitEta[rId.chamber()][rId.layer()]->Fill(rId.roll());
+        int bx = hit->bx();
+        if (bx < minBx) minBx = bx;
+        if (bx > maxBx) maxBx = bx;
+	//h_bxtotal->Fill(hit->bx());
+	h_allStrips[rId.chamber()][rId.layer()-1]->Fill(hit->strip(), rId.roll());
+	h_allStrips_area[rId.chamber()][rId.layer()-1]->Fill(hit->strip(), rId.roll(), 1/(trArea*instLumi));
+
+      }
+    }
+  }
+
+  b_nBx = (maxBx - minBx + 1);
   h_totalStrips->Fill(totalStrips);
 
   t_event->Fill();
