@@ -75,6 +75,8 @@ private:
   edm::EDGetTokenT<LumiScalersCollection> lumiScalers_;
   edm::Service<TFileService> fs;
 
+  int runNum_;
+
   MuonServiceProxy* theService_;
   edm::ESHandle<Propagator> propagator_;
   edm::ESHandle<TransientTrackBuilder> ttrackBuilder_;
@@ -82,7 +84,8 @@ private:
   
   TH2D* h_firstStrip[36][2];
   TH2D* h_allStrips[36][2];
-  TH2D* h_allStrips_area[36][2];
+  TH2D* h_chInfo[36][2];
+
   TH2D* h_globalPosOnGem;
   TH1D* h_instLumi;
   TH1D* h_time;
@@ -96,14 +99,19 @@ private:
 
   TTree *t_hit;
   int b_run, b_lumi, b_event;
+  ULong64_t b_runTime;
   int b_firstStrip, b_nStrips, b_chamber, b_layer, b_etaPartition, b_muonQuality;
-  float b_x, b_y, b_z, b_area;
+  int b_detId;
+  float b_x, b_y, b_z;
 
   int nEvents, nMuonTotal, nGEMFiducialMuon, nGEMTrackWithMuon;
   int b_nMuons, b_nMuonsWithGEMHit, b_nBx;
-  float b_instLumi;
+  float b_instLumi, b_area, b_chArea;
 
-  int b_nGEMHits;
+  int b_nGEMHits, b_nDigis;
+
+  TTree *t_digi;
+  int b_strip;
 
   TTree *t_run;
   TTree *t_event;
@@ -122,6 +130,7 @@ SliceTestAnalysis::SliceTestAnalysis(const edm::ParameterSet& iConfig) :
   lumiScalers_ = consumes<LumiScalersCollection>(iConfig.getParameter<edm::InputTag>("lumiScalers"));
   edm::ParameterSet serviceParameters = iConfig.getParameter<edm::ParameterSet>("ServiceParameters");
   theService_ = new MuonServiceProxy(serviceParameters);
+  runNum_ = iConfig.getParameter<int>("runNum");
 
   h_clusterSize=fs->make<TH1D>(Form("clusterSize"),"clusterSize",100,0,100);
   h_totalStrips=fs->make<TH1D>(Form("totalStrips"),"totalStrips",200,0,200);
@@ -134,11 +143,13 @@ SliceTestAnalysis::SliceTestAnalysis(const edm::ParameterSet& iConfig) :
 
   t_run = fs->make<TTree>("Run", "Run");
   t_run->Branch("run", &b_run, "run/I");
+  t_run->Branch("runTime", &b_runTime, "runTime/l");
   
   t_event = fs->make<TTree>("Event", "Event");
   t_event->Branch("nMuons", &b_nMuons, "nMuons/I");
   t_event->Branch("nMuonsWithGEMHit", &b_nMuonsWithGEMHit, "nMuonsWithGEMHit/I");
   t_event->Branch("nGEMHits", &b_nGEMHits, "nGEMHits/I");
+  t_event->Branch("nDigis", &b_nDigis, "nDigis/I");
   t_event->Branch("run", &b_run, "run/I");
   t_event->Branch("lumi", &b_lumi, "lumi/I");
   t_event->Branch("nBx", &b_nBx, "nBx/I");
@@ -157,31 +168,39 @@ SliceTestAnalysis::SliceTestAnalysis(const edm::ParameterSet& iConfig) :
   t_hit->Branch("nStrips", &b_nStrips, "nStrips/I");
   t_hit->Branch("chamber", &b_chamber, "chamber/I");
   t_hit->Branch("layer", &b_layer, "layer/I");
+  t_hit->Branch("area", &b_area, "area/F");
+  t_hit->Branch("chArea", &b_chArea, "chArea/F");
   t_hit->Branch("etaPartition", &b_etaPartition, "etaPartition/I");
   t_hit->Branch("muonQuality", &b_muonQuality, "muonQuality/I")->SetTitle("muonQuality -1:none 0:noid 1:looseID 2:tightID");
   t_hit->Branch("x", &b_x, "x/F");
   t_hit->Branch("y", &b_y, "y/F");
   t_hit->Branch("z", &b_z, "z/F");
-  t_hit->Branch("area", &b_area, "area/F");
+
+  t_digi = fs->make<TTree>("Digi", "Digi");
+  t_digi->Branch("run", &b_run, "run/I");
+  t_digi->Branch("lumi", &b_lumi, "lumi/I");  
+  t_digi->Branch("strip", &b_strip, "strip/I");
+  t_digi->Branch("chamber", &b_chamber, "chamber/I");
+  t_digi->Branch("layer", &b_layer, "layer/I");
+  t_digi->Branch("etaPartition", &b_etaPartition, "etaPartition/I");
+  t_digi->Branch("area", &b_area, "area/F");
 
   for (int ichamber=0; ichamber<36;++ichamber) {
   // for (int ichamber=27; ichamber<=30;++ichamber) {
     for (int ilayer=0; ilayer<2;++ilayer) {
-      h_firstStrip[ichamber][ilayer] = fs->make<TH2D>(Form("firstStrip ch %i lay %i",ichamber, ilayer),"firstStrip",384,1,385,8,0.5,8.5);
+      h_firstStrip[ichamber][ilayer] = fs->make<TH2D>(Form("firstStrip ch %i lay %i",ichamber+1, ilayer+1),"firstStrip",384,1,385,8,0.5,8.5);
       h_firstStrip[ichamber][ilayer]->GetXaxis()->SetTitle("strip");
       h_firstStrip[ichamber][ilayer]->GetYaxis()->SetTitle("iEta");
       
-      h_allStrips[ichamber][ilayer] = fs->make<TH2D>(Form("allStrips ch %i lay %i",ichamber, ilayer),"allStrips",384,1,385,8,0.5,8.5);
+      h_allStrips[ichamber][ilayer] = fs->make<TH2D>(Form("allStrips ch %i lay %i",ichamber+1, ilayer+1),"allStrips",384,1,385,8,0.5,8.5);
       h_allStrips[ichamber][ilayer]->GetXaxis()->SetTitle("strip");
       h_allStrips[ichamber][ilayer]->GetYaxis()->SetTitle("iEta");
 
-      h_allStrips_area[ichamber][ilayer] = fs->make<TH2D>(Form("allStrips ch %i lay %i area",ichamber, ilayer),"allStrips",384,1,385,8,0.5,8.5);
-      h_allStrips_area[ichamber][ilayer]->GetXaxis()->SetTitle("strip");
-      h_allStrips_area[ichamber][ilayer]->GetYaxis()->SetTitle("iEta");
+      h_chInfo[ichamber][ilayer] = fs->make<TH2D>(Form("chInfo ch %i lay %i", ichamber+1, ilayer+1), "1:detId 2:area", 2, 0.5, 2.5, 8, 0.5, 8.5);
 
-      h_inEta[ichamber][ilayer] = fs->make<TH1D>(Form("inEta ch %i lay %i",ichamber, ilayer),"inEta",8,0.5,8.5);
-      h_hitEta[ichamber][ilayer] = fs->make<TH1D>(Form("hitEta ch %i lay %i",ichamber, ilayer),"hitEta",8,0.5,8.5);
-      h_trkEta[ichamber][ilayer] = fs->make<TH1D>(Form("trkEta ch %i lay %i",ichamber, ilayer),"trkEta",8,0.5,8.5);
+      h_inEta[ichamber][ilayer] = fs->make<TH1D>(Form("inEta ch %i lay %i",ichamber+1, ilayer+1),"inEta",8,0.5,8.5);
+      h_hitEta[ichamber][ilayer] = fs->make<TH1D>(Form("hitEta ch %i lay %i",ichamber+1, ilayer+1),"hitEta",8,0.5,8.5);
+      h_trkEta[ichamber][ilayer] = fs->make<TH1D>(Form("trkEta ch %i lay %i",ichamber+1, ilayer+1),"trkEta",8,0.5,8.5);
     }
   }
 
@@ -202,6 +221,11 @@ SliceTestAnalysis::~SliceTestAnalysis()
 void
 SliceTestAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup)
 {
+  b_run = iEvent.run();
+  b_lumi = iEvent.luminosityBlock();
+  
+  if (b_run != runNum_) return;
+
   nEvents++;
   
   int maxBx = 0;
@@ -210,10 +234,8 @@ SliceTestAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& iSet
   b_nMuons = 0;
   b_nMuonsWithGEMHit = 0;
   b_nGEMHits = 0;
+  b_nDigis = 0;
   
-  b_run = iEvent.run();
-  b_lumi = iEvent.luminosityBlock();
-
   edm::ESHandle<GEMGeometry> hGeom;
   iSetup.get<MuonGeometryRecord>().get(hGeom);
   const GEMGeometry* GEMGeometry_ = &*hGeom;
@@ -398,30 +420,51 @@ SliceTestAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& iSet
   b_instLumi = instLumi;
   h_pileup->Fill(pileup);
   for (auto ch : GEMGeometry_->chambers()) {
+    double chArea = 0;
+    for(auto roll : ch->etaPartitions()) {
+      const int nstrips(roll->nstrips());
+      const TrapezoidalStripTopology* top_(dynamic_cast<const TrapezoidalStripTopology*>(&(roll->topology())));
+      const float striplength(top_->stripLength());
+      double trStripArea = (roll->pitch()) * striplength;
+      double trArea = trStripArea * nstrips;
+      chArea += trArea;
+    } 
+    b_chArea = chArea;
     for(auto roll : ch->etaPartitions()) {
       GEMDetId rId = roll->id();
 
+      //std::cout << "rId " << rId <<std::endl;
+      auto recHitsRange = gemRecHits->get(rId); 
+      auto gemRecHit = recHitsRange.first;
+      
       const int nstrips(roll->nstrips());
       const TrapezoidalStripTopology* top_(dynamic_cast<const TrapezoidalStripTopology*>(&(roll->topology())));
       const float striplength(top_->stripLength());
       double trStripArea = (roll->pitch()) * striplength;
       double trArea = trStripArea * nstrips;
       
-      //std::cout << "rId " << rId <<std::endl;
-      auto recHitsRange = gemRecHits->get(rId); 
-      auto gemRecHit = recHitsRange.first;
+      auto axis = h_chInfo[rId.chamber()-1][rId.layer()-1]->GetXaxis();
+      auto idBin = axis->FindBin(1.);
+      auto areaBin = axis->FindBin(2.);
+      auto rollBin = h_chInfo[rId.chamber()-1][rId.layer()-1]->GetYaxis()->FindBin(rId.roll());
+      h_chInfo[rId.chamber()-1][rId.layer()-1]->SetBinContent(areaBin, rollBin, trArea);
+      h_chInfo[rId.chamber()-1][rId.layer()-1]->SetBinContent(idBin, rollBin, rId.rawId());
+
+      b_area = trArea;
+
       for (auto hit = gemRecHit; hit != recHitsRange.second; ++hit) {
 
-//	h_hitEta[rId.chamber()][rId.layer()]->Fill(rId.roll());
-	h_firstStrip[rId.chamber()][rId.layer()-1]->Fill(hit->firstClusterStrip(), rId.roll());
+//	h_hitEta[rId.chamber()-1][rId.layer()-1]->Fill(rId.roll());
+	h_firstStrip[rId.chamber()-1][rId.layer()-1]->Fill(hit->firstClusterStrip(), rId.roll());
 	h_clusterSize->Fill(hit->clusterSize());
 	h_bxtotal->Fill(hit->BunchX());
+        int bx = hit->BunchX();
+        if (maxBx < bx) maxBx = bx;
+        if (minBx > bx) minBx = bx;
 	for (int nstrip = hit->firstClusterStrip(); nstrip < hit->firstClusterStrip()+hit->clusterSize(); ++nstrip) {
 	  totalStrips++;
-//	  h_allStrips[rId.chamber()][rId.layer()-1]->Fill(nstrip, rId.roll());
-//	  h_allStrips_area[rId.chamber()][rId.layer()-1]->Fill(nstrip, rId.roll(), 1/(trArea*instLumi));
+	  h_allStrips[rId.chamber()-1][rId.layer()-1]->Fill(nstrip, rId.roll());
 	}
-        b_area = trArea;
 
 	b_firstStrip = hit->firstClusterStrip();
 	b_nStrips = hit->clusterSize();
@@ -466,19 +509,26 @@ SliceTestAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& iSet
       const float striplength(top_->stripLength());
       double trStripArea = (roll->pitch()) * striplength;
       double trArea = trStripArea * nstrips;
-      
+ 
+      b_area = trArea;
+
       auto digisRange = gemDigis->get(rId); 
       auto gemDigi = digisRange.first;
+
+      b_chamber = rId.chamber();
+      b_layer = rId.layer();
+      b_etaPartition = rId.roll();
+
       for (auto hit = gemDigi; hit != digisRange.second; ++hit) {
 
-	h_hitEta[rId.chamber()][rId.layer()]->Fill(rId.roll());
+        h_hitEta[rId.chamber()][rId.layer()]->Fill(rId.roll());
         int bx = hit->bx();
         if (bx < minBx) minBx = bx;
         if (bx > maxBx) maxBx = bx;
-	//h_bxtotal->Fill(hit->bx());
-	h_allStrips[rId.chamber()][rId.layer()-1]->Fill(hit->strip(), rId.roll());
-	h_allStrips_area[rId.chamber()][rId.layer()-1]->Fill(hit->strip(), rId.roll(), 1/(trArea*instLumi));
-
+        //h_bxtotal->Fill(hit->bx());
+        b_strip = hit->strip();
+        b_nDigis++;  
+        t_digi->Fill();
       }
     }
   }
@@ -494,6 +544,8 @@ void SliceTestAnalysis::endJob(){}
 
 void SliceTestAnalysis::beginRun(Run const& run, EventSetup const&){
   b_run = run.run();
+  if (b_run != runNum_) return;
+  b_runTime = run.endTime().value() - run.beginTime().value();
   t_run->Fill();
 }
 void SliceTestAnalysis::endRun(Run const&, EventSetup const&){}

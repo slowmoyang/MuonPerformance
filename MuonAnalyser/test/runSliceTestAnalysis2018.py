@@ -58,5 +58,6 @@ process.SliceTestAnalysis = cms.EDAnalyzer('SliceTestAnalysis',
     muons = cms.InputTag("muons"),
     vertexCollection = cms.InputTag("offlinePrimaryVertices"),
     lumiScalers = cms.InputTag("scalersRawToDigi"),
+    runNum = cms.int32(319348),
 )
 process.p = cms.Path(process.SliceTestAnalysis)
