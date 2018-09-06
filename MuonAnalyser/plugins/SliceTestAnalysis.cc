@@ -32,7 +32,10 @@
 #include "DataFormats/CSCRecHit/interface/CSCRecHit2DCollection.h"
 #include "DataFormats/MuonDetId/interface/GEMDetId.h"
 #include "DataFormats/MuonDetId/interface/CSCDetId.h"
+#include "DataFormats/MuonData/interface/MuonDigiCollection.h"
 #include "DataFormats/GEMDigi/interface/GEMDigiCollection.h"
+#include "DataFormats/GEMDigi/interface/GEMAMCStatusDigi.h"
+
 #include "Geometry/GEMGeometry/interface/GEMGeometry.h"
 #include "Geometry/GEMGeometry/interface/GEMEtaPartition.h"
 #include "Geometry/GEMGeometry/interface/GEMEtaPartitionSpecs.h"
@@ -76,6 +79,7 @@ private:
   edm::EDGetTokenT<GEMRecHitCollection> gemRecHits_;
   edm::EDGetTokenT<CSCRecHit2DCollection> cscRecHits_;
   edm::EDGetTokenT<GEMDigiCollection> gemDigis_;
+  edm::EDGetTokenT<MuonDigiCollection<unsigned short, GEMAMCStatusDigi>> gemDigisAMC_;
   edm::EDGetTokenT<edm::View<reco::Muon> > muons_;
   edm::EDGetTokenT<reco::VertexCollection> vertexCollection_;
   edm::EDGetTokenT<LumiScalersCollection> lumiScalers_;
@@ -107,9 +111,10 @@ private:
   TTree *t_run;
   
   TTree *t_event;
-  int b_run, b_lumi;
+  int b_run, b_lumi, b_latency;
   int b_nGEMHits, b_nCSCHits;
   float b_instLumi;
+  unsigned int b_timeLow, b_timeHigh;
 
   TTree *t_hit;
   int b_firstStrip, b_nStrips, b_chamber, b_layer, b_etaPartition;
@@ -124,6 +129,7 @@ SliceTestAnalysis::SliceTestAnalysis(const edm::ParameterSet& iConfig)
   gemRecHits_ = consumes<GEMRecHitCollection>(iConfig.getParameter<edm::InputTag>("gemRecHits"));
   cscRecHits_ = consumes<CSCRecHit2DCollection>(iConfig.getParameter<edm::InputTag>("cscRecHits"));
   muons_ = consumes<View<reco::Muon> >(iConfig.getParameter<InputTag>("muons"));
+  gemDigisAMC_ = consumes<MuonDigiCollection<unsigned short, GEMAMCStatusDigi>>(iConfig.getParameter<edm::InputTag>("gemDigisAMC"));
   vertexCollection_ = consumes<reco::VertexCollection>(iConfig.getParameter<edm::InputTag>("vertexCollection"));
   lumiScalers_ = consumes<LumiScalersCollection>(iConfig.getParameter<edm::InputTag>("lumiScalers"));
   edm::ParameterSet serviceParameters = iConfig.getParameter<edm::ParameterSet>("ServiceParameters");
@@ -149,7 +155,10 @@ SliceTestAnalysis::SliceTestAnalysis(const edm::ParameterSet& iConfig)
   t_event->Branch("nGEMHits", &b_nGEMHits, "nGEMHits/I");
   t_event->Branch("run", &b_run, "run/I");
   t_event->Branch("lumi", &b_lumi, "lumi/I");
+  t_event->Branch("latency", &b_latency, "latency/I");
   t_event->Branch("instLumi", &b_instLumi, "instLumi/F");
+  t_event->Branch("timeLow", &b_timeLow, "timeLow/i");
+  t_event->Branch("timeHigh", &b_timeHigh, "timeHigh/i");
 
   t_hit = fs->make<TTree>("Hit", "Hit");
   t_hit->Branch("firstStrip", &b_firstStrip, "firstStrip/I");
@@ -203,9 +212,9 @@ SliceTestAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& iSet
   iSetup.get<MuonGeometryRecord>().get(hGEMGeom);
   const GEMGeometry* GEMGeometry_ = &*hGEMGeom;
   
-  edm::ESHandle<CSCGeometry> hCSCGeom;
-  iSetup.get<MuonGeometryRecord>().get(hCSCGeom);
-  const CSCGeometry* CSCGeometry_ = &*hCSCGeom;
+  //edm::ESHandle<CSCGeometry> hCSCGeom;
+  //iSetup.get<MuonGeometryRecord>().get(hCSCGeom);
+  //const CSCGeometry* CSCGeometry_ = &*hCSCGeom;
   
   iSetup.get<TransientTrackRecord>().get("TransientTrackBuilder",ttrackBuilder_);
   theService_->update(iSetup);
@@ -216,6 +225,9 @@ SliceTestAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& iSet
 
   edm::Handle<CSCRecHit2DCollection> cscRecHits;  
   iEvent.getByToken(cscRecHits_, cscRecHits);
+
+  edm::Handle<MuonDigiCollection<unsigned short,GEMAMCStatusDigi>> gemDigisAMC;
+  iEvent.getByToken(gemDigisAMC_, gemDigisAMC);
 
   edm::Handle<reco::VertexCollection> vertexCollection;
   iEvent.getByToken( vertexCollection_, vertexCollection );
@@ -234,7 +246,16 @@ SliceTestAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& iSet
   auto pileup = (lumiScalers->at(0)).pileup();
   h_instLumi->Fill(instLumi);
   b_instLumi = instLumi;
+  b_timeHigh = iEvent.time().unixTime();
+  b_timeLow = iEvent.time().microsecondOffset();
   h_pileup->Fill(pileup);
+
+  b_latency = -1;
+  for (auto g : *gemDigisAMC) {
+    for (auto a = g.second.first; a != g.second.second; a++) {
+      b_latency = a->Param1();
+    }
+  }
 
   for (auto ch : GEMGeometry_->chambers()) {
     for(auto roll : ch->etaPartitions()) {
@@ -270,26 +291,26 @@ SliceTestAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& iSet
     }
   }
 
-  for (auto ch : CSCGeometry_->chambers()) {
-    for (auto layer : ch->layers()) {
-      CSCDetId lId = layer->id();
-      if (lId.station() != 1) continue;
-      if (lId.endcap() != 2) continue;
-      if (lId.chamber() < 27 or lId.chamber() > 30) continue;
+  //for (auto ch : CSCGeometry_->chambers()) {
+  //  for (auto layer : ch->layers()) {
+  //    CSCDetId lId = layer->id();
+  //    if (lId.station() != 1) continue;
+  //    if (lId.endcap() != 2) continue;
+  //    if (lId.chamber() < 27 or lId.chamber() > 30) continue;
 
-      auto recHitsRange = cscRecHits->get(lId);
-      auto cscRecHit = recHitsRange.first;
-      
-      for (auto hit = cscRecHit; hit != recHitsRange.second; ++hit) {
-	b_nStrips = hit->nStrips();
-	b_chamber = lId.chamber();
-	b_layer = lId.layer();
+  //    auto recHitsRange = cscRecHits->get(lId);
+  //    auto cscRecHit = recHitsRange.first;
+  //    
+  //    for (auto hit = cscRecHit; hit != recHitsRange.second; ++hit) {
+  //      b_nStrips = hit->nStrips();
+  //      b_chamber = lId.chamber();
+  //      b_layer = lId.layer();
 
-	t_csc->Fill();
-	b_nCSCHits++;
-      }
-    }
-  }
+  //      t_csc->Fill();
+  //      b_nCSCHits++;
+  //    }
+  //  }
+  //}
 
   h_totalStrips->Fill(totalStrips);
 
@@ -321,19 +342,19 @@ void SliceTestAnalysis::beginRun(Run const& run, EventSetup const& iSetup){
     }
   }
 
-  for (auto ch : CSCGeometry_->chambers()) {
-    for (auto layer : ch->layers()) {
-      CSCDetId lId = layer->id();
-      if (lId.station() != 1) continue;
-      if (lId.endcap() != 2) continue;
-      if (lId.chamber() < 27 or lId.chamber() > 30) continue;
+  //for (auto ch : CSCGeometry_->chambers()) {
+  //  for (auto layer : ch->layers()) {
+  //    CSCDetId lId = layer->id();
+  //    if (lId.station() != 1) continue;
+  //    if (lId.endcap() != 2) continue;
+  //    if (lId.chamber() < 27 or lId.chamber() > 30) continue;
 
-      const OffsetRadialStripTopology* top_(dynamic_cast<const OffsetRadialStripTopology*>(&(layer->topology())));
-      const float striplength(top_->stripLength());
-      const float pitch(top_->pitch());
-      b_cscArea[lId.chamber()%2] = striplength * pitch * top_->nstrips();
-    }
-  }
+  //    const OffsetRadialStripTopology* top_(dynamic_cast<const OffsetRadialStripTopology*>(&(layer->topology())));
+  //    const float striplength(top_->stripLength());
+  //    const float pitch(top_->pitch());
+  //    b_cscArea[lId.chamber()%2] = striplength * pitch * top_->nstrips();
+  //  }
+  //}
   
   b_run = run.run();
   t_run->Fill();
