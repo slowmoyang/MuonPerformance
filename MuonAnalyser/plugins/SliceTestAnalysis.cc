@@ -51,6 +51,7 @@
 
 #include "FWCore/Framework/interface/ESHandle.h"
 #include "FWCore/Framework/interface/Run.h"
+#include "FWCore/Framework/interface/LuminosityBlock.h"
 
 #include "TH1D.h"
 #include "TH2D.h"
@@ -75,6 +76,9 @@ private:
   virtual void beginRun(Run const&, EventSetup const&) override;
   virtual void endRun(Run const&, EventSetup const&) override;
 
+  virtual void beginLuminosityBlock(LuminosityBlock const&, EventSetup const&) override;
+  virtual void endLuminosityBlock(LuminosityBlock const&, EventSetup const&) override;
+
   // ----------member data ---------------------------
   edm::EDGetTokenT<GEMRecHitCollection> gemRecHits_;
   edm::EDGetTokenT<CSCRecHit2DCollection> cscRecHits_;
@@ -93,8 +97,13 @@ private:
   TH2D* h_firstStrip[36][2];
   TH2D* h_allStrips[36][2];
 
+  TH2D* h_activeLumi;
+  TH1D* h_lumiStatus;
+  
+  bool vfatStatus[36][2][24];
+
   TH2D* h_globalPosOnGem;
-  TH1D* h_instLumi;
+  TH1D* h_instLumi[36][2][24];
   TH1D* h_pileup;
   TH1D* h_clusterSize, *h_totalStrips, *h_bxtotal;
   TH1D* h_inEta[36][2];
@@ -137,7 +146,7 @@ SliceTestAnalysis::SliceTestAnalysis(const edm::ParameterSet& iConfig)
 
   h_clusterSize=fs->make<TH1D>(Form("clusterSize"),"clusterSize",100,0,100);
   h_totalStrips=fs->make<TH1D>(Form("totalStrips"),"totalStrips",200,0,200);
-  h_instLumi=fs->make<TH1D>(Form("instLumi"),"instLumi",100,0,10);
+  h_instLumi[0][0][0]=fs->make<TH1D>(Form("instLumi"),"instLumi",100,0,10);
   h_pileup=fs->make<TH1D>(Form("pileup"),"pileup",80,0,80);
   h_bxtotal=fs->make<TH1D>(Form("bx"),"bx",1000,0,1000);
 
@@ -175,7 +184,7 @@ SliceTestAnalysis::SliceTestAnalysis(const edm::ParameterSet& iConfig)
   t_csc->Branch("layer", &b_layer, "layer/I");
   t_csc->Branch("nStrips", &b_nStrips, "nStrips/I");
 
-  for (int ichamber=0; ichamber<36;++ichamber) {
+  for (int ichamber=26; ichamber<30;++ichamber) {
   // for (int ichamber=27; ichamber<=30;++ichamber) {
     for (int ilayer=0; ilayer<2;++ilayer) {
       h_firstStrip[ichamber][ilayer] = fs->make<TH2D>(Form("firstStrip ch %i lay %i",ichamber+1, ilayer+1),"firstStrip",384,1,385,8,0.5,8.5);
@@ -189,6 +198,13 @@ SliceTestAnalysis::SliceTestAnalysis(const edm::ParameterSet& iConfig)
       h_inEta[ichamber][ilayer] = fs->make<TH1D>(Form("inEta ch %i lay %i",ichamber+1, ilayer+1),"inEta",8,0.5,8.5);
       h_hitEta[ichamber][ilayer] = fs->make<TH1D>(Form("hitEta ch %i lay %i",ichamber+1, ilayer+1),"hitEta",8,0.5,8.5);
       h_trkEta[ichamber][ilayer] = fs->make<TH1D>(Form("trkEta ch %i lay %i",ichamber+1, ilayer+1),"trkEta",8,0.5,8.5);
+      
+      for (int vfat = 0; vfat < 24; vfat++) {
+        h_instLumi[ichamber][ilayer][vfat] = fs->make<TH1D>(Form("instLumi ch %i lay %i", ichamber+1, ilayer+1),"instlumi", 50, 0, 2);
+        h_instLumi[ichamber][ilayer][vfat]->GetXaxis()->SetTitle("instantaneous luminosity[cm^{-2}s^{-1}]");
+        h_instLumi[ichamber][ilayer][vfat]->GetYaxis()->SetTitle("Event");
+        vfatStatus[ichamber][ilayer][vfat] = false;
+      }
     }
   }
 
@@ -244,7 +260,8 @@ SliceTestAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& iSet
   int totalStrips = 0;
   auto instLumi = (lumiScalers->at(0)).instantLumi()/10000;
   auto pileup = (lumiScalers->at(0)).pileup();
-  h_instLumi->Fill(instLumi);
+  h_instLumi[0][0][0]->Fill(instLumi);
+  h_lumiStatus->Fill(instLumi);
   b_instLumi = instLumi;
   b_timeHigh = iEvent.time().unixTime();
   b_timeLow = iEvent.time().microsecondOffset();
@@ -279,6 +296,9 @@ SliceTestAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& iSet
 	b_chamber = rId.chamber();
 	b_layer = rId.layer();
 	b_etaPartition = rId.roll();
+        int vfat = (8-b_etaPartition)+8*((b_firstStrip-1)/128);
+        h_activeLumi->Fill(b_lumi, b_chamber+(b_layer-1)/2.+vfat/48.);
+        vfatStatus[b_chamber-1][b_layer-1][vfat] = true;
 
 	auto globalPosition = roll->toGlobal(hit->localPosition());
 	b_x = globalPosition.x();
@@ -287,6 +307,17 @@ SliceTestAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& iSet
 
 	t_hit->Fill();
 	b_nGEMHits++;
+      }
+    }
+  }
+
+  for (int ichamber=26; ichamber<30;++ichamber) {
+  // for (int ichamber=27; ichamber<=30;++ichamber) {
+    for (int ilayer=0; ilayer<2;++ilayer) {
+      for (int vfat = 0; vfat < 24; vfat++) {
+        if (!vfatStatus[ichamber][ilayer][vfat]) continue;
+        h_instLumi[ichamber][ilayer][vfat]->Fill(instLumi);
+        vfatStatus[ichamber][ilayer][vfat] = false;
       }
     }
   }
@@ -321,6 +352,8 @@ void SliceTestAnalysis::beginJob(){}
 void SliceTestAnalysis::endJob(){}
 
 void SliceTestAnalysis::beginRun(Run const& run, EventSetup const& iSetup){
+  h_activeLumi = fs->make<TH2D>(Form("%i active lumi", run.run()),Form("Run number %i", run.run()),5000, 0, 5000, 400, 27, 31);
+  
   edm::ESHandle<GEMGeometry> hGEMGeom;
   iSetup.get<MuonGeometryRecord>().get(hGEMGeom);
   const GEMGeometry* GEMGeometry_ = &*hGEMGeom;
@@ -360,6 +393,11 @@ void SliceTestAnalysis::beginRun(Run const& run, EventSetup const& iSetup){
   t_run->Fill();
 }
 void SliceTestAnalysis::endRun(Run const&, EventSetup const&){}
+
+void SliceTestAnalysis::beginLuminosityBlock(LuminosityBlock const& lumiBlock, EventSetup const& iSetup){
+  h_lumiStatus = fs->make<TH1D>(Form("%i %i status", lumiBlock.run(), lumiBlock.luminosityBlock()), "", 1000, 0, 2);
+}
+void SliceTestAnalysis::endLuminosityBlock(LuminosityBlock const& lumiBlock, EventSetup const& iSetup){}
 
 //define this as a plug-in
 DEFINE_FWK_MODULE(SliceTestAnalysis);
