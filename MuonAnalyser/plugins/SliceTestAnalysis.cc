@@ -34,7 +34,7 @@
 #include "DataFormats/MuonDetId/interface/CSCDetId.h"
 #include "DataFormats/MuonData/interface/MuonDigiCollection.h"
 #include "DataFormats/GEMDigi/interface/GEMDigiCollection.h"
-#include "DataFormats/GEMDigi/interface/GEMAMCStatusDigi.h"
+//#include "DataFormats/GEMDigi/interface/GEMAMCStatusDigi.h"
 
 #include "Geometry/GEMGeometry/interface/GEMGeometry.h"
 #include "Geometry/GEMGeometry/interface/GEMEtaPartition.h"
@@ -83,7 +83,7 @@ private:
   edm::EDGetTokenT<GEMRecHitCollection> gemRecHits_;
   edm::EDGetTokenT<CSCRecHit2DCollection> cscRecHits_;
   edm::EDGetTokenT<GEMDigiCollection> gemDigis_;
-  edm::EDGetTokenT<MuonDigiCollection<unsigned short, GEMAMCStatusDigi>> gemDigisAMC_;
+//  edm::EDGetTokenT<MuonDigiCollection<unsigned short, GEMAMCStatusDigi>> gemDigisAMC_;
   edm::EDGetTokenT<edm::View<reco::Muon> > muons_;
   edm::EDGetTokenT<reco::VertexCollection> vertexCollection_;
   edm::EDGetTokenT<LumiScalersCollection> lumiScalers_;
@@ -138,7 +138,7 @@ SliceTestAnalysis::SliceTestAnalysis(const edm::ParameterSet& iConfig)
   gemRecHits_ = consumes<GEMRecHitCollection>(iConfig.getParameter<edm::InputTag>("gemRecHits"));
   cscRecHits_ = consumes<CSCRecHit2DCollection>(iConfig.getParameter<edm::InputTag>("cscRecHits"));
   muons_ = consumes<View<reco::Muon> >(iConfig.getParameter<InputTag>("muons"));
-  gemDigisAMC_ = consumes<MuonDigiCollection<unsigned short, GEMAMCStatusDigi>>(iConfig.getParameter<edm::InputTag>("gemDigisAMC"));
+//  gemDigisAMC_ = consumes<MuonDigiCollection<unsigned short, GEMAMCStatusDigi>>(iConfig.getParameter<edm::InputTag>("gemDigisAMC"));
   vertexCollection_ = consumes<reco::VertexCollection>(iConfig.getParameter<edm::InputTag>("vertexCollection"));
   lumiScalers_ = consumes<LumiScalersCollection>(iConfig.getParameter<edm::InputTag>("lumiScalers"));
   edm::ParameterSet serviceParameters = iConfig.getParameter<edm::ParameterSet>("ServiceParameters");
@@ -200,7 +200,7 @@ SliceTestAnalysis::SliceTestAnalysis(const edm::ParameterSet& iConfig)
       h_trkEta[ichamber][ilayer] = fs->make<TH1D>(Form("trkEta ch %i lay %i",ichamber+1, ilayer+1),"trkEta",8,0.5,8.5);
       
       for (int vfat = 0; vfat < 24; vfat++) {
-        h_instLumi[ichamber][ilayer][vfat] = fs->make<TH1D>(Form("instLumi ch %i lay %i", ichamber+1, ilayer+1),"instlumi", 50, 0, 2);
+        h_instLumi[ichamber][ilayer][vfat] = fs->make<TH1D>(Form("instLumi ch %i lay %i vfat %i", ichamber+1, ilayer+1, vfat),"instlumi", 50, 0, 2);
         h_instLumi[ichamber][ilayer][vfat]->GetXaxis()->SetTitle("instantaneous luminosity[cm^{-2}s^{-1}]");
         h_instLumi[ichamber][ilayer][vfat]->GetYaxis()->SetTitle("Event");
         vfatStatus[ichamber][ilayer][vfat] = false;
@@ -242,8 +242,8 @@ SliceTestAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& iSet
   edm::Handle<CSCRecHit2DCollection> cscRecHits;  
   iEvent.getByToken(cscRecHits_, cscRecHits);
 
-  edm::Handle<MuonDigiCollection<unsigned short,GEMAMCStatusDigi>> gemDigisAMC;
-  iEvent.getByToken(gemDigisAMC_, gemDigisAMC);
+//  edm::Handle<MuonDigiCollection<unsigned short,GEMAMCStatusDigi>> gemDigisAMC;
+//  iEvent.getByToken(gemDigisAMC_, gemDigisAMC);
 
   edm::Handle<reco::VertexCollection> vertexCollection;
   iEvent.getByToken( vertexCollection_, vertexCollection );
@@ -268,11 +268,11 @@ SliceTestAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& iSet
   h_pileup->Fill(pileup);
 
   b_latency = -1;
-  for (auto g : *gemDigisAMC) {
-    for (auto a = g.second.first; a != g.second.second; a++) {
-      b_latency = a->Param1();
-    }
-  }
+//  for (auto g : *gemDigisAMC) {
+//    for (auto a = g.second.first; a != g.second.second; a++) {
+//      b_latency = a->Param1();
+//    }
+//  }
 
   for (auto ch : GEMGeometry_->chambers()) {
     for(auto roll : ch->etaPartitions()) {
@@ -352,7 +352,7 @@ void SliceTestAnalysis::beginJob(){}
 void SliceTestAnalysis::endJob(){}
 
 void SliceTestAnalysis::beginRun(Run const& run, EventSetup const& iSetup){
-  h_activeLumi = fs->make<TH2D>(Form("%i active lumi", run.run()),Form("Run number %i", run.run()),5000, 0, 5000, 400, 27, 31);
+  h_activeLumi = fs->make<TH2D>(Form("%i active lumi", run.run()),Form("Run number %i", run.run()),1000, 0, 5000, 400, 27, 31);
   
   edm::ESHandle<GEMGeometry> hGEMGeom;
   iSetup.get<MuonGeometryRecord>().get(hGEMGeom);
