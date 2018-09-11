@@ -22,7 +22,8 @@ process.source = cms.Source("PoolSource", fileNames = cms.untracked.vstring())
 process.source.skipEvents = cms.untracked.uint32(0)
 
 #process.source.fileNames.append('/store/data/Run2018B/Cosmics/AOD/PromptReco-v1/000/317/428/00000/E4BC1D7B-3F6A-E811-9E05-FA163E57A064.root')
-process.source.fileNames.append('/store/user/jlee/SingleMuon/2018DLatency321908-321909/180902_194730/0000/AOD_38.root')
+process.source.fileNames.append('/store/user/jlee/SingleMuon/Run2018C-v1/RECOv5/AOD_000.root')
+#process.source.fileNames.append('/store/user/jlee/SingleMuon/2018DLatency321908-321909/180902_194730/0000/AOD_38.root')
 #from glob import glob
 #process.source.fileNames.extend(['file:'+f for f in glob('/xrootd/store/user/jlee/SingleMuon/Run2017G-v1/RECOv2/step3*.root')][:5])
 #process.source.fileNames.append('/store/user/jlee/SingleMuon/Run2017G-v1/FEVTEvent/step3_313.root')
@@ -39,11 +40,12 @@ process.TFileService = cms.Service("TFileService",fileName = cms.string("histo.r
 process.SliceTestAnalysis = cms.EDAnalyzer('SliceTestAnalysis',
     process.MuonServiceProxy,
     gemRecHits = cms.InputTag("gemRecHits"),
-    cscRecHits = cms.InputTag("csc2DRecHits"),
+    #cscRecHits = cms.InputTag("csc2DRecHits"),
+    cscSegments = cms.InputTag("cscSegments"),
     muons = cms.InputTag("muons"),
-    gemDigisAMC = cms.InputTag("muonGEMDigis","AMCStatus"),
-    gemDigisGEB = cms.InputTag("muonGEMDigis","GEBStatus"),
-    gemDigisvfat = cms.InputTag("muonGEMDigis","vfatStatus"),
+    #gemDigisAMC = cms.InputTag("muonGEMDigis","AMCStatus"),
+    #gemDigisGEB = cms.InputTag("muonGEMDigis","GEBStatus"),
+    #gemDigisvfat = cms.InputTag("muonGEMDigis","vfatStatus"),
     vertexCollection = cms.InputTag("offlinePrimaryVertices"),
     lumiScalers = cms.InputTag("scalersRawToDigi"),
 )

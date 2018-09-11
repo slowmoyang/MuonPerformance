@@ -30,11 +30,12 @@
 #include "DataFormats/VertexReco/interface/VertexFwd.h"
 #include "DataFormats/GEMRecHit/interface/GEMRecHitCollection.h"
 #include "DataFormats/CSCRecHit/interface/CSCRecHit2DCollection.h"
+#include "DataFormats/CSCRecHit/interface/CSCSegmentCollection.h"
 #include "DataFormats/MuonDetId/interface/GEMDetId.h"
 #include "DataFormats/MuonDetId/interface/CSCDetId.h"
 #include "DataFormats/MuonData/interface/MuonDigiCollection.h"
 #include "DataFormats/GEMDigi/interface/GEMDigiCollection.h"
-//#include "DataFormats/GEMDigi/interface/GEMAMCStatusDigi.h"
+#include "DataFormats/GEMDigi/interface/GEMVfatStatusDigiCollection.h"
 
 #include "Geometry/GEMGeometry/interface/GEMGeometry.h"
 #include "Geometry/GEMGeometry/interface/GEMEtaPartition.h"
@@ -46,6 +47,7 @@
 #include "Geometry/CommonDetUnit/interface/GeomDet.h"
 #include "Geometry/CommonTopologies/interface/StripTopology.h"
 #include "Geometry/CommonTopologies/interface/TrapezoidalStripTopology.h"
+#include "Geometry/CommonTopologies/interface/RadialStripTopology.h"
 
 #include "Geometry/Records/interface/MuonGeometryRecord.h"
 
@@ -81,9 +83,10 @@ private:
 
   // ----------member data ---------------------------
   edm::EDGetTokenT<GEMRecHitCollection> gemRecHits_;
-  edm::EDGetTokenT<CSCRecHit2DCollection> cscRecHits_;
+  //edm::EDGetTokenT<CSCRecHit2DCollection> cscRecHits_;
+  edm::EDGetTokenT<CSCSegmentCollection> cscSegments_;
   edm::EDGetTokenT<GEMDigiCollection> gemDigis_;
-//  edm::EDGetTokenT<MuonDigiCollection<unsigned short, GEMAMCStatusDigi>> gemDigisAMC_;
+  //edm::EDGetTokenT<GEMVfatStatusDigiCollection> gemDigisvfat_;
   edm::EDGetTokenT<edm::View<reco::Muon> > muons_;
   edm::EDGetTokenT<reco::VertexCollection> vertexCollection_;
   edm::EDGetTokenT<LumiScalersCollection> lumiScalers_;
@@ -98,12 +101,10 @@ private:
   TH2D* h_allStrips[36][2];
 
   TH2D* h_activeLumi;
+  TH2D* h_activeLumi_;
   TH1D* h_lumiStatus;
   
-  bool vfatStatus[36][2][24];
-
   TH2D* h_globalPosOnGem;
-  TH1D* h_instLumi[36][2][24];
   TH1D* h_pileup;
   TH1D* h_clusterSize, *h_totalStrips, *h_bxtotal;
   TH1D* h_inEta[36][2];
@@ -115,19 +116,22 @@ private:
   TTree *t_setup;
   float b_stripLength[2][8];
   float b_stripPitch[2][8];
-  float b_cscArea[2];
+  float b_cscArea;
   
   TTree *t_run;
   
   TTree *t_event;
   int b_run, b_lumi, b_latency;
-  int b_nGEMHits, b_nCSCHits;
+  int b_nGEMHits, b_nCSCHits, b_nMuons;
   float b_instLumi;
   unsigned int b_timeLow, b_timeHigh;
 
   TTree *t_hit;
   int b_firstStrip, b_nStrips, b_chamber, b_layer, b_etaPartition;
   float b_x, b_y, b_z;
+
+  TTree *t_muon;
+  float b_pt, b_eta, b_phi;
   
   TTree *t_csc;
 
@@ -136,9 +140,10 @@ private:
 SliceTestAnalysis::SliceTestAnalysis(const edm::ParameterSet& iConfig)
 { 
   gemRecHits_ = consumes<GEMRecHitCollection>(iConfig.getParameter<edm::InputTag>("gemRecHits"));
-  cscRecHits_ = consumes<CSCRecHit2DCollection>(iConfig.getParameter<edm::InputTag>("cscRecHits"));
+  //cscRecHits_ = consumes<CSCRecHit2DCollection>(iConfig.getParameter<edm::InputTag>("cscRecHits"));
+  cscSegments_ = consumes<CSCSegmentCollection>(iConfig.getParameter<edm::InputTag>("cscSegments"));
   muons_ = consumes<View<reco::Muon> >(iConfig.getParameter<InputTag>("muons"));
-//  gemDigisAMC_ = consumes<MuonDigiCollection<unsigned short, GEMAMCStatusDigi>>(iConfig.getParameter<edm::InputTag>("gemDigisAMC"));
+  //gemDigisvfat_ = consumes<GEMVfatStatusDigiCollection>(iConfig.getParameter<edm::InputTag>("gemDigisvfat"));
   vertexCollection_ = consumes<reco::VertexCollection>(iConfig.getParameter<edm::InputTag>("vertexCollection"));
   lumiScalers_ = consumes<LumiScalersCollection>(iConfig.getParameter<edm::InputTag>("lumiScalers"));
   edm::ParameterSet serviceParameters = iConfig.getParameter<edm::ParameterSet>("ServiceParameters");
@@ -146,7 +151,6 @@ SliceTestAnalysis::SliceTestAnalysis(const edm::ParameterSet& iConfig)
 
   h_clusterSize=fs->make<TH1D>(Form("clusterSize"),"clusterSize",100,0,100);
   h_totalStrips=fs->make<TH1D>(Form("totalStrips"),"totalStrips",200,0,200);
-  h_instLumi[0][0][0]=fs->make<TH1D>(Form("instLumi"),"instLumi",100,0,10);
   h_pileup=fs->make<TH1D>(Form("pileup"),"pileup",80,0,80);
   h_bxtotal=fs->make<TH1D>(Form("bx"),"bx",1000,0,1000);
 
@@ -158,10 +162,12 @@ SliceTestAnalysis::SliceTestAnalysis(const edm::ParameterSet& iConfig)
   t_setup = fs->make<TTree>("Setup", "Setup");
   t_setup->Branch("stripLength", &b_stripLength, "stripLength[2][8]/F");
   t_setup->Branch("stripPitch", &b_stripPitch, "stripPitch[2][8]/F");
-  t_setup->Branch("cscArea", &b_cscArea, "cscArea[2]/F");
+  t_setup->Branch("cscArea", &b_cscArea, "cscArea/F");
 
   t_event = fs->make<TTree>("Event", "Event");
   t_event->Branch("nGEMHits", &b_nGEMHits, "nGEMHits/I");
+  t_event->Branch("nCSCHits", &b_nCSCHits, "nCSCHits/I");
+  t_event->Branch("nMuons", &b_nMuons, "nMuons/I");
   t_event->Branch("run", &b_run, "run/I");
   t_event->Branch("lumi", &b_lumi, "lumi/I");
   t_event->Branch("latency", &b_latency, "latency/I");
@@ -182,7 +188,11 @@ SliceTestAnalysis::SliceTestAnalysis(const edm::ParameterSet& iConfig)
   t_csc = fs->make<TTree>("CSC", "CSC");
   t_csc->Branch("chamber", &b_chamber, "chamber/I");
   t_csc->Branch("layer", &b_layer, "layer/I");
-  t_csc->Branch("nStrips", &b_nStrips, "nStrips/I");
+
+  t_muon = fs->make<TTree>("muon", "muon");
+  t_muon->Branch("pt", &b_pt, "pt/F");
+  t_muon->Branch("eta", &b_eta, "eta/F");
+  t_muon->Branch("phi", &b_phi, "phi/F");
 
   for (int ichamber=26; ichamber<30;++ichamber) {
   // for (int ichamber=27; ichamber<=30;++ichamber) {
@@ -198,13 +208,6 @@ SliceTestAnalysis::SliceTestAnalysis(const edm::ParameterSet& iConfig)
       h_inEta[ichamber][ilayer] = fs->make<TH1D>(Form("inEta ch %i lay %i",ichamber+1, ilayer+1),"inEta",8,0.5,8.5);
       h_hitEta[ichamber][ilayer] = fs->make<TH1D>(Form("hitEta ch %i lay %i",ichamber+1, ilayer+1),"hitEta",8,0.5,8.5);
       h_trkEta[ichamber][ilayer] = fs->make<TH1D>(Form("trkEta ch %i lay %i",ichamber+1, ilayer+1),"trkEta",8,0.5,8.5);
-      
-      for (int vfat = 0; vfat < 24; vfat++) {
-        h_instLumi[ichamber][ilayer][vfat] = fs->make<TH1D>(Form("instLumi ch %i lay %i vfat %i", ichamber+1, ilayer+1, vfat),"instlumi", 50, 0, 2);
-        h_instLumi[ichamber][ilayer][vfat]->GetXaxis()->SetTitle("instantaneous luminosity[cm^{-2}s^{-1}]");
-        h_instLumi[ichamber][ilayer][vfat]->GetYaxis()->SetTitle("Event");
-        vfatStatus[ichamber][ilayer][vfat] = false;
-      }
     }
   }
 
@@ -223,14 +226,16 @@ SliceTestAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& iSet
   b_lumi = iEvent.luminosityBlock();
   
   b_nGEMHits = 0;
+  b_nCSCHits = 0;
+  b_nMuons = 0;
   
   edm::ESHandle<GEMGeometry> hGEMGeom;
   iSetup.get<MuonGeometryRecord>().get(hGEMGeom);
   const GEMGeometry* GEMGeometry_ = &*hGEMGeom;
   
-  //edm::ESHandle<CSCGeometry> hCSCGeom;
-  //iSetup.get<MuonGeometryRecord>().get(hCSCGeom);
-  //const CSCGeometry* CSCGeometry_ = &*hCSCGeom;
+  edm::ESHandle<CSCGeometry> hCSCGeom;
+  iSetup.get<MuonGeometryRecord>().get(hCSCGeom);
+  const CSCGeometry* CSCGeometry_ = &*hCSCGeom;
   
   iSetup.get<TransientTrackRecord>().get("TransientTrackBuilder",ttrackBuilder_);
   theService_->update(iSetup);
@@ -239,11 +244,14 @@ SliceTestAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& iSet
   edm::Handle<GEMRecHitCollection> gemRecHits;  
   iEvent.getByToken(gemRecHits_, gemRecHits);
 
-  edm::Handle<CSCRecHit2DCollection> cscRecHits;  
-  iEvent.getByToken(cscRecHits_, cscRecHits);
+  //edm::Handle<CSCRecHit2DCollection> cscRecHits;  
+  //iEvent.getByToken(cscRecHits_, cscRecHits);
 
-//  edm::Handle<MuonDigiCollection<unsigned short,GEMAMCStatusDigi>> gemDigisAMC;
-//  iEvent.getByToken(gemDigisAMC_, gemDigisAMC);
+  edm::Handle<CSCSegmentCollection> cscSegments;  
+  iEvent.getByToken(cscSegments_, cscSegments);
+
+  //edm::Handle<GEMVfatStatusDigiCollection> gemDigisvfat;
+  //iEvent.getByToken(gemDigisvfat_, gemDigisvfat);
 
   edm::Handle<reco::VertexCollection> vertexCollection;
   iEvent.getByToken( vertexCollection_, vertexCollection );
@@ -260,7 +268,6 @@ SliceTestAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& iSet
   int totalStrips = 0;
   auto instLumi = (lumiScalers->at(0)).instantLumi()/10000;
   auto pileup = (lumiScalers->at(0)).pileup();
-  h_instLumi[0][0][0]->Fill(instLumi);
   h_lumiStatus->Fill(instLumi);
   b_instLumi = instLumi;
   b_timeHigh = iEvent.time().unixTime();
@@ -268,18 +275,33 @@ SliceTestAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& iSet
   h_pileup->Fill(pileup);
 
   b_latency = -1;
-//  for (auto g : *gemDigisAMC) {
-//    for (auto a = g.second.first; a != g.second.second; a++) {
-//      b_latency = a->Param1();
-//    }
-//  }
 
+  for (size_t i = 0; i < muons->size(); ++i) {
+    edm::RefToBase<reco::Muon> muRef = muons->refAt(i);
+    const reco::Muon* mu = muRef.get();
+
+    const reco::Track* muonTrack = 0;  
+    if ( mu->globalTrack().isNonnull() ) muonTrack = mu->globalTrack().get();
+    else if ( mu->outerTrack().isNonnull() ) muonTrack = mu->outerTrack().get();
+    if (muonTrack) {
+      b_pt = muonTrack->pt();
+      b_eta = muonTrack->eta();
+      b_phi = muonTrack->phi();
+      if (b_eta < -2.15 or b_eta > -1.6) continue;
+      t_muon->Fill();
+      b_nMuons++;
+    }
+  }
+  
   for (auto ch : GEMGeometry_->chambers()) {
     for(auto roll : ch->etaPartitions()) {
       GEMDetId rId = roll->id();
 
       auto recHitsRange = gemRecHits->get(rId); 
       auto gemRecHit = recHitsRange.first;
+      b_chamber = rId.chamber();
+      b_layer = rId.layer();
+      b_etaPartition = rId.roll();
       
       for (auto hit = gemRecHit; hit != recHitsRange.second; ++hit) {
 
@@ -293,12 +315,8 @@ SliceTestAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& iSet
 
 	b_firstStrip = hit->firstClusterStrip();
 	b_nStrips = hit->clusterSize();
-	b_chamber = rId.chamber();
-	b_layer = rId.layer();
-	b_etaPartition = rId.roll();
         int vfat = (8-b_etaPartition)+8*((b_firstStrip-1)/128);
         h_activeLumi->Fill(b_lumi, b_chamber+(b_layer-1)/2.+vfat/48.);
-        vfatStatus[b_chamber-1][b_layer-1][vfat] = true;
 
 	auto globalPosition = roll->toGlobal(hit->localPosition());
 	b_x = globalPosition.x();
@@ -308,40 +326,39 @@ SliceTestAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& iSet
 	t_hit->Fill();
 	b_nGEMHits++;
       }
+
+      //auto gemVfatRange = gemDigisvfat->get(rId);
+      //
+      //for (auto vfatStatus = gemVfatRange.first; vfatStatus != gemVfatRange.second; vfatStatus++) {
+      //  auto ix = vfatStatus->position();
+      //  int vfat = 8-b_etaPartition+8*ix;
+      //  bool flag = int(vfatStatus->flag()) != 0;
+      //  flag = int(vfatStatus->quality()) != 0;
+      //  if (!flag) h_activeLumi_->Fill(b_lumi, b_chamber+(b_layer-1)/2.+vfat/48.);
+      //}
     }
+
   }
 
-  for (int ichamber=26; ichamber<30;++ichamber) {
-  // for (int ichamber=27; ichamber<=30;++ichamber) {
-    for (int ilayer=0; ilayer<2;++ilayer) {
-      for (int vfat = 0; vfat < 24; vfat++) {
-        if (!vfatStatus[ichamber][ilayer][vfat]) continue;
-        h_instLumi[ichamber][ilayer][vfat]->Fill(instLumi);
-        vfatStatus[ichamber][ilayer][vfat] = false;
+  for (auto ch : CSCGeometry_->chambers()) {
+    for (auto layer : ch->layers()) {
+      CSCDetId lId = layer->id();
+      if (lId.station() != 1) continue;
+      if (lId.endcap() != 2) continue;
+      if (lId.chamber() < 27 or lId.chamber() > 30) continue;
+
+      auto segmentsRange = cscSegments->get(lId);
+      auto cscSegment = segmentsRange.first;
+      
+      for (auto hit = cscSegment; hit != segmentsRange.second; ++hit) {
+        b_chamber = lId.chamber();
+        b_layer = lId.layer();
+
+        t_csc->Fill();
+        b_nCSCHits++;
       }
     }
   }
-
-  //for (auto ch : CSCGeometry_->chambers()) {
-  //  for (auto layer : ch->layers()) {
-  //    CSCDetId lId = layer->id();
-  //    if (lId.station() != 1) continue;
-  //    if (lId.endcap() != 2) continue;
-  //    if (lId.chamber() < 27 or lId.chamber() > 30) continue;
-
-  //    auto recHitsRange = cscRecHits->get(lId);
-  //    auto cscRecHit = recHitsRange.first;
-  //    
-  //    for (auto hit = cscRecHit; hit != recHitsRange.second; ++hit) {
-  //      b_nStrips = hit->nStrips();
-  //      b_chamber = lId.chamber();
-  //      b_layer = lId.layer();
-
-  //      t_csc->Fill();
-  //      b_nCSCHits++;
-  //    }
-  //  }
-  //}
 
   h_totalStrips->Fill(totalStrips);
 
@@ -353,6 +370,7 @@ void SliceTestAnalysis::endJob(){}
 
 void SliceTestAnalysis::beginRun(Run const& run, EventSetup const& iSetup){
   h_activeLumi = fs->make<TH2D>(Form("%i active lumi", run.run()),Form("Run number %i", run.run()),1000, 0, 5000, 400, 27, 31);
+  h_activeLumi_ = fs->make<TH2D>(Form("%i active lumi_", run.run()),Form("Run number %i", run.run()),1000, 0, 5000, 400, 27, 31);
   
   edm::ESHandle<GEMGeometry> hGEMGeom;
   iSetup.get<MuonGeometryRecord>().get(hGEMGeom);
@@ -375,19 +393,19 @@ void SliceTestAnalysis::beginRun(Run const& run, EventSetup const& iSetup){
     }
   }
 
-  //for (auto ch : CSCGeometry_->chambers()) {
-  //  for (auto layer : ch->layers()) {
-  //    CSCDetId lId = layer->id();
-  //    if (lId.station() != 1) continue;
-  //    if (lId.endcap() != 2) continue;
-  //    if (lId.chamber() < 27 or lId.chamber() > 30) continue;
+  for (auto ch : CSCGeometry_->chambers()) {
+    for (auto layer : ch->layers()) {
+      CSCDetId lId = layer->id();
+      if (lId.station() != 1) continue;
+      if (lId.endcap() != 2) continue;
+      if (lId.chamber() < 27 or lId.chamber() > 30) continue;
 
-  //    const OffsetRadialStripTopology* top_(dynamic_cast<const OffsetRadialStripTopology*>(&(layer->topology())));
-  //    const float striplength(top_->stripLength());
-  //    const float pitch(top_->pitch());
-  //    b_cscArea[lId.chamber()%2] = striplength * pitch * top_->nstrips();
-  //  }
-  //}
+      const RadialStripTopology* top_(dynamic_cast<const RadialStripTopology*>(&(layer->topology())));
+      const float striplength(top_->stripLength());
+      const float pitch(layer->geometry()->stripPitch());
+      b_cscArea = striplength * pitch * top_->nstrips();
+    }
+  }
   
   b_run = run.run();
   t_run->Fill();
