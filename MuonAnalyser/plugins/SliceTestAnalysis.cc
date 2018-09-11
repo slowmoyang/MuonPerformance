@@ -341,22 +341,19 @@ SliceTestAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& iSet
   }
 
   for (auto ch : CSCGeometry_->chambers()) {
-    for (auto layer : ch->layers()) {
-      CSCDetId lId = layer->id();
-      if (lId.station() != 1) continue;
-      if (lId.endcap() != 2) continue;
-      if (lId.chamber() < 27 or lId.chamber() > 30) continue;
+    CSCDetId cId = ch->id();
+    if (cId.station() != 1) continue;
+    if (cId.endcap() != 2) continue;
+    if (cId.chamber() < 27 or cId.chamber() > 30) continue;
 
-      auto segmentsRange = cscSegments->get(lId);
-      auto cscSegment = segmentsRange.first;
-      
-      for (auto hit = cscSegment; hit != segmentsRange.second; ++hit) {
-        b_chamber = lId.chamber();
-        b_layer = lId.layer();
+    auto segmentsRange = cscSegments->get(cId);
+    auto cscSegment = segmentsRange.first;
+    
+    for (auto hit = cscSegment; hit != segmentsRange.second; ++hit) {
+      b_chamber = cId.chamber();
 
-        t_csc->Fill();
-        b_nCSCHits++;
-      }
+      t_csc->Fill();
+      b_nCSCHits++;
     }
   }
 
