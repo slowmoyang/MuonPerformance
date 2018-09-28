@@ -17,13 +17,6 @@
 #include "FWCore/ServiceRegistry/interface/Service.h"
 #include "CommonTools/UtilAlgos/interface/TFileService.h"
 
-#include "RecoMuon/TrackingTools/interface/MuonServiceProxy.h"
-#include "TrackingTools/GeomPropagators/interface/Propagator.h"
-#include "TrackingTools/TransientTrack/interface/TransientTrackBuilder.h"
-#include "TrackingTools/Records/interface/TransientTrackRecord.h"
-#include "TrackPropagation/SteppingHelixPropagator/interface/SteppingHelixPropagator.h"
-#include "MagneticField/Engine/interface/MagneticField.h"
-
 #include "DataFormats/Scalers/interface/LumiScalers.h"
 #include "DataFormats/PatCandidates/interface/Muon.h"
 #include "DataFormats/VertexReco/interface/Vertex.h"
@@ -31,25 +24,26 @@
 #include "DataFormats/GEMRecHit/interface/GEMRecHitCollection.h"
 #include "DataFormats/CSCRecHit/interface/CSCRecHit2DCollection.h"
 #include "DataFormats/CSCRecHit/interface/CSCSegmentCollection.h"
-#include "DataFormats/MuonDetId/interface/GEMDetId.h"
-#include "DataFormats/MuonDetId/interface/CSCDetId.h"
 #include "DataFormats/MuonData/interface/MuonDigiCollection.h"
 #include "DataFormats/GEMDigi/interface/GEMDigiCollection.h"
 #include "DataFormats/GEMDigi/interface/GEMVfatStatusDigiCollection.h"
 
-#include "Geometry/GEMGeometry/interface/GEMGeometry.h"
-#include "Geometry/GEMGeometry/interface/GEMEtaPartition.h"
-#include "Geometry/GEMGeometry/interface/GEMEtaPartitionSpecs.h"
-#include "Geometry/CSCGeometry/interface/CSCGeometry.h"
-#include "Geometry/CSCGeometry/interface/CSCLayer.h"
-#include "Geometry/CSCGeometry/interface/CSCLayerGeometry.h"
+//Geometry
 #include "Geometry/Records/interface/MuonGeometryRecord.h"
 #include "Geometry/CommonDetUnit/interface/GeomDet.h"
 #include "Geometry/CommonTopologies/interface/StripTopology.h"
-#include "Geometry/CommonTopologies/interface/TrapezoidalStripTopology.h"
-#include "Geometry/CommonTopologies/interface/RadialStripTopology.h"
+#include "DataFormats/MuonDetId/interface/GEMDetId.h"
+#include "DataFormats/MuonDetId/interface/CSCDetId.h"
 
-#include "Geometry/Records/interface/MuonGeometryRecord.h"
+#include "Geometry/GEMGeometry/interface/GEMGeometry.h"
+#include "Geometry/GEMGeometry/interface/GEMEtaPartition.h"
+#include "Geometry/GEMGeometry/interface/GEMEtaPartitionSpecs.h"
+#include "Geometry/CommonTopologies/interface/TrapezoidalStripTopology.h"
+
+#include "Geometry/CSCGeometry/interface/CSCGeometry.h"
+#include "Geometry/CSCGeometry/interface/CSCLayer.h"
+#include "Geometry/CSCGeometry/interface/CSCLayerGeometry.h"
+#include "Geometry/CommonTopologies/interface/RadialStripTopology.h"
 
 #include "FWCore/Framework/interface/ESHandle.h"
 #include "FWCore/Framework/interface/Run.h"
@@ -83,19 +77,14 @@ private:
 
   // ----------member data ---------------------------
   edm::EDGetTokenT<GEMRecHitCollection> gemRecHits_;
-  //edm::EDGetTokenT<CSCRecHit2DCollection> cscRecHits_;
   edm::EDGetTokenT<CSCSegmentCollection> cscSegments_;
   edm::EDGetTokenT<GEMDigiCollection> gemDigis_;
-  //edm::EDGetTokenT<GEMVfatStatusDigiCollection> gemDigisvfat_;
   edm::EDGetTokenT<edm::View<reco::Muon> > muons_;
   edm::EDGetTokenT<reco::VertexCollection> vertexCollection_;
   edm::EDGetTokenT<LumiScalersCollection> lumiScalers_;
   edm::Service<TFileService> fs;
-
-  MuonServiceProxy* theService_;
-  edm::ESHandle<Propagator> propagator_;
-  edm::ESHandle<TransientTrackBuilder> ttrackBuilder_;
-  edm::ESHandle<MagneticField> bField_; 
+  //edm::EDGetTokenT<CSCRecHit2DCollection> cscRecHits_;
+  //edm::EDGetTokenT<GEMVfatStatusDigiCollection> gemDigisvfat_;
   
   TH2D* h_firstStrip[36][2];
   TH2D* h_allStrips[36][2];
@@ -104,8 +93,6 @@ private:
   TH2D* h_activeLumi_;
   TH1D* h_lumiStatus;
   
-  TH2D* h_globalPosOnGem;
-  TH1D* h_pileup;
   TH1D* h_clusterSize, *h_totalStrips, *h_bxtotal;
   TH1D* h_inEta[36][2];
   TH1D* h_hitEta[36][2];
@@ -123,7 +110,7 @@ private:
   TTree *t_event;
   int b_run, b_lumi, b_latency;
   int b_nGEMHits, b_nCSCHits, b_nMuons;
-  float b_instLumi;
+  float b_instLumi, b_pileup;
   unsigned int b_timeLow, b_timeHigh;
 
   TTree *t_hit;
@@ -147,14 +134,11 @@ SliceTestBkgAnalysis::SliceTestBkgAnalysis(const edm::ParameterSet& iConfig)
   vertexCollection_ = consumes<reco::VertexCollection>(iConfig.getParameter<edm::InputTag>("vertexCollection"));
   lumiScalers_ = consumes<LumiScalersCollection>(iConfig.getParameter<edm::InputTag>("lumiScalers"));
   edm::ParameterSet serviceParameters = iConfig.getParameter<edm::ParameterSet>("ServiceParameters");
-  theService_ = new MuonServiceProxy(serviceParameters);
 
   h_clusterSize=fs->make<TH1D>(Form("clusterSize"),"clusterSize",100,0,100);
   h_totalStrips=fs->make<TH1D>(Form("totalStrips"),"totalStrips",200,0,200);
-  h_pileup=fs->make<TH1D>(Form("pileup"),"pileup",80,0,80);
   h_bxtotal=fs->make<TH1D>(Form("bx"),"bx",1000,0,1000);
 
-  h_globalPosOnGem = fs->make<TH2D>(Form("onGEM"), "onGEM", 100, -100, 100, 100, -100, 100);
 
   t_run = fs->make<TTree>("Run", "Run");
   t_run->Branch("run", &b_run, "run/I");
@@ -237,21 +221,11 @@ SliceTestBkgAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& i
   iSetup.get<MuonGeometryRecord>().get(hCSCGeom);
   const CSCGeometry* CSCGeometry_ = &*hCSCGeom;
   
-  iSetup.get<TransientTrackRecord>().get("TransientTrackBuilder",ttrackBuilder_);
-  theService_->update(iSetup);
-  auto propagator = theService_->propagator("SteppingHelixPropagatorAny");
-  
   edm::Handle<GEMRecHitCollection> gemRecHits;  
   iEvent.getByToken(gemRecHits_, gemRecHits);
 
-  //edm::Handle<CSCRecHit2DCollection> cscRecHits;  
-  //iEvent.getByToken(cscRecHits_, cscRecHits);
-
   edm::Handle<CSCSegmentCollection> cscSegments;  
   iEvent.getByToken(cscSegments_, cscSegments);
-
-  //edm::Handle<GEMVfatStatusDigiCollection> gemDigisvfat;
-  //iEvent.getByToken(gemDigisvfat_, gemDigisvfat);
 
   edm::Handle<reco::VertexCollection> vertexCollection;
   iEvent.getByToken( vertexCollection_, vertexCollection );
@@ -265,14 +239,19 @@ SliceTestBkgAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& i
   Handle<View<reco::Muon> > muons;
   iEvent.getByToken(muons_, muons);
 
+  //edm::Handle<GEMVfatStatusDigiCollection> gemDigisvfat;
+  //iEvent.getByToken(gemDigisvfat_, gemDigisvfat);
+  
+  //edm::Handle<CSCRecHit2DCollection> cscRecHits;  
+  //iEvent.getByToken(cscRecHits_, cscRecHits);
+
   int totalStrips = 0;
   auto instLumi = (lumiScalers->at(0)).instantLumi()/10000;
-  auto pileup = (lumiScalers->at(0)).pileup();
   h_lumiStatus->Fill(instLumi);
   b_instLumi = instLumi;
+  b_pileup = (lumiScalers->at(0)).pileup();
   b_timeHigh = iEvent.time().unixTime();
   b_timeLow = iEvent.time().microsecondOffset();
-  h_pileup->Fill(pileup);
 
   b_latency = -1;
 
@@ -308,6 +287,7 @@ SliceTestBkgAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& i
 	h_firstStrip[rId.chamber()-1][rId.layer()-1]->Fill(hit->firstClusterStrip(), rId.roll());
 	h_clusterSize->Fill(hit->clusterSize());
 	h_bxtotal->Fill(hit->BunchX());
+
 	for (int nstrip = hit->firstClusterStrip(); nstrip < hit->firstClusterStrip()+hit->clusterSize(); ++nstrip) {
 	  totalStrips++;
 	  h_allStrips[rId.chamber()-1][rId.layer()-1]->Fill(nstrip, rId.roll());
@@ -315,8 +295,10 @@ SliceTestBkgAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& i
 
 	b_firstStrip = hit->firstClusterStrip();
 	b_nStrips = hit->clusterSize();
+
         int vfat = (8-b_etaPartition)+8*((b_firstStrip-1)/128);
-        h_activeLumi->Fill(b_lumi, b_chamber+(b_layer-1)/2.+vfat/48.);
+        float vfatNu = b_chamber+(b_layer-1)/2.+vfat/48.;
+        h_activeLumi->Fill(b_lumi, vfatNu);
 
 	auto globalPosition = roll->toGlobal(hit->localPosition());
 	b_x = globalPosition.x();
@@ -342,6 +324,7 @@ SliceTestBkgAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& i
 
   for (auto ch : CSCGeometry_->chambers()) {
     CSCDetId cId = ch->id();
+    // Selection for CSC chambers are in same regime with GEMINI
     if (cId.station() != 1) continue;
     if (cId.endcap() != 2) continue;
     if (cId.chamber() < 27 or cId.chamber() > 30) continue;
@@ -366,9 +349,7 @@ void SliceTestBkgAnalysis::beginJob(){}
 void SliceTestBkgAnalysis::endJob(){}
 
 void SliceTestBkgAnalysis::beginRun(Run const& run, EventSetup const& iSetup){
-  h_activeLumi = fs->make<TH2D>(Form("%i active lumi", run.run()),Form("Run number %i", run.run()),1000, 0, 5000, 400, 27, 31);
-  h_activeLumi_ = fs->make<TH2D>(Form("%i active lumi_", run.run()),Form("Run number %i", run.run()),1000, 0, 5000, 400, 27, 31);
-  
+
   edm::ESHandle<GEMGeometry> hGEMGeom;
   iSetup.get<MuonGeometryRecord>().get(hGEMGeom);
   const GEMGeometry* GEMGeometry_ = &*hGEMGeom;
@@ -376,6 +357,9 @@ void SliceTestBkgAnalysis::beginRun(Run const& run, EventSetup const& iSetup){
   edm::ESHandle<CSCGeometry> hCSCGeom;
   iSetup.get<MuonGeometryRecord>().get(hCSCGeom);
   const CSCGeometry* CSCGeometry_ = &*hCSCGeom;
+
+  h_activeLumi = fs->make<TH2D>(Form("%i active lumi", run.run()),Form("Run number %i", run.run()),1000, 0, 5000, 400, 27, 31);
+  h_activeLumi_ = fs->make<TH2D>(Form("%i active lumi_", run.run()),Form("Run number %i", run.run()),1000, 0, 5000, 400, 27, 31);
   
   for (auto ch : GEMGeometry_->chambers()) {
     for(auto roll : ch->etaPartitions()) {
