@@ -37,7 +37,7 @@ process.options = cms.untracked.PSet()
 
 process.TFileService = cms.Service("TFileService",fileName = cms.string("histo.root"))
 
-process.SliceTestAnalaysisBkg = cms.EDAnalyzer('SliceTestAnalysisBkg',
+process.SliceTestAnalaysisBkg = cms.EDAnalyzer('SliceTestBkgAnalysis',
     process.MuonServiceProxy,
     gemRecHits = cms.InputTag("gemRecHits"),
     #cscRecHits = cms.InputTag("csc2DRecHits"),

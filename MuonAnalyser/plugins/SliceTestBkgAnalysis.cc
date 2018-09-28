@@ -65,10 +65,10 @@
 using namespace std;
 using namespace edm;
 
-class SliceTestAnalysisBkg : public edm::EDAnalyzer {
+class SliceTestBkgAnalysis : public edm::EDAnalyzer {
 public:
-  explicit SliceTestAnalysisBkg(const edm::ParameterSet&);
-  ~SliceTestAnalysisBkg();
+  explicit SliceTestBkgAnalysis(const edm::ParameterSet&);
+  ~SliceTestBkgAnalysis();
 
 private:
   virtual void analyze(const edm::Event&, const edm::EventSetup&);
@@ -137,7 +137,7 @@ private:
 
 };
 
-SliceTestAnalysisBkg::SliceTestAnalysisBkg(const edm::ParameterSet& iConfig)
+SliceTestBkgAnalysis::SliceTestBkgAnalysis(const edm::ParameterSet& iConfig)
 { 
   gemRecHits_ = consumes<GEMRecHitCollection>(iConfig.getParameter<edm::InputTag>("gemRecHits"));
   //cscRecHits_ = consumes<CSCRecHit2DCollection>(iConfig.getParameter<edm::InputTag>("cscRecHits"));
@@ -214,13 +214,13 @@ SliceTestAnalysisBkg::SliceTestAnalysisBkg(const edm::ParameterSet& iConfig)
 
 }
 
-SliceTestAnalysisBkg::~SliceTestAnalysisBkg()
+SliceTestBkgAnalysis::~SliceTestBkgAnalysis()
 {
   t_setup->Fill();
 }
 
 void
-SliceTestAnalysisBkg::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup)
+SliceTestBkgAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup)
 {
   b_run = iEvent.run();
   b_lumi = iEvent.luminosityBlock();
@@ -362,10 +362,10 @@ SliceTestAnalysisBkg::analyze(const edm::Event& iEvent, const edm::EventSetup& i
   t_event->Fill();
 }
 
-void SliceTestAnalysisBkg::beginJob(){}
-void SliceTestAnalysisBkg::endJob(){}
+void SliceTestBkgAnalysis::beginJob(){}
+void SliceTestBkgAnalysis::endJob(){}
 
-void SliceTestAnalysisBkg::beginRun(Run const& run, EventSetup const& iSetup){
+void SliceTestBkgAnalysis::beginRun(Run const& run, EventSetup const& iSetup){
   h_activeLumi = fs->make<TH2D>(Form("%i active lumi", run.run()),Form("Run number %i", run.run()),1000, 0, 5000, 400, 27, 31);
   h_activeLumi_ = fs->make<TH2D>(Form("%i active lumi_", run.run()),Form("Run number %i", run.run()),1000, 0, 5000, 400, 27, 31);
   
@@ -407,12 +407,12 @@ void SliceTestAnalysisBkg::beginRun(Run const& run, EventSetup const& iSetup){
   b_run = run.run();
   t_run->Fill();
 }
-void SliceTestAnalysisBkg::endRun(Run const&, EventSetup const&){}
+void SliceTestBkgAnalysis::endRun(Run const&, EventSetup const&){}
 
-void SliceTestAnalysisBkg::beginLuminosityBlock(LuminosityBlock const& lumiBlock, EventSetup const& iSetup){
+void SliceTestBkgAnalysis::beginLuminosityBlock(LuminosityBlock const& lumiBlock, EventSetup const& iSetup){
   h_lumiStatus = fs->make<TH1D>(Form("%i %i status", lumiBlock.run(), lumiBlock.luminosityBlock()), "", 1000, 0, 2);
 }
-void SliceTestAnalysisBkg::endLuminosityBlock(LuminosityBlock const& lumiBlock, EventSetup const& iSetup){}
+void SliceTestBkgAnalysis::endLuminosityBlock(LuminosityBlock const& lumiBlock, EventSetup const& iSetup){}
 
 //define this as a plug-in
-DEFINE_FWK_MODULE(SliceTestAnalysisBkg);
+DEFINE_FWK_MODULE(SliceTestBkgAnalysis);
