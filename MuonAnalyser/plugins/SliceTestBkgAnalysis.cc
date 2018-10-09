@@ -28,7 +28,7 @@
 #include "DataFormats/GEMDigi/interface/GEMDigiCollection.h"
 #include "DataFormats/GEMDigi/interface/GEMVfatStatusDigiCollection.h"
 
-//Geometry
+//Libraries for Geometry
 #include "Geometry/Records/interface/MuonGeometryRecord.h"
 #include "Geometry/CommonDetUnit/interface/GeomDet.h"
 #include "Geometry/CommonTopologies/interface/StripTopology.h"
@@ -44,6 +44,14 @@
 #include "Geometry/CSCGeometry/interface/CSCLayer.h"
 #include "Geometry/CSCGeometry/interface/CSCLayerGeometry.h"
 #include "Geometry/CommonTopologies/interface/RadialStripTopology.h"
+
+//Libraries for tracking
+#include "RecoMuon/TrackingTools/interface/MuonServiceProxy.h"
+#include "TrackingTools/GeomPropagators/interface/Propagator.h"
+#include "TrackingTools/TransientTrack/interface/TransientTrackBuilder.h"
+#include "TrackingTools/Records/interface/TransientTrackRecord.h"
+#include "TrackPropagation/SteppingHelixPropagator/interface/SteppingHelixPropagator.h"
+#include "MagneticField/Engine/interface/MagneticField.h"
 
 #include "FWCore/Framework/interface/ESHandle.h"
 #include "FWCore/Framework/interface/Run.h"
@@ -74,6 +82,8 @@ private:
 
   virtual void beginLuminosityBlock(LuminosityBlock const&, EventSetup const&) override;
   virtual void endLuminosityBlock(LuminosityBlock const&, EventSetup const&) override;
+  
+  const GEMEtaPartition* findEtaPartition(const GEMChamber*& chamber, GlobalPoint& tsosGP);
 
   // ----------member data ---------------------------
   edm::EDGetTokenT<GEMRecHitCollection> gemRecHits_;
@@ -86,6 +96,10 @@ private:
   //edm::EDGetTokenT<CSCRecHit2DCollection> cscRecHits_;
   //edm::EDGetTokenT<GEMVfatStatusDigiCollection> gemDigisvfat_;
   
+  MuonServiceProxy* theService_;
+  edm::ESHandle<TransientTrackBuilder> ttrackBuilder_;
+  edm::ESHandle<MagneticField> bField_; 
+
   TH2D* h_firstStrip[36][2];
   TH2D* h_allStrips[36][2];
 
@@ -115,10 +129,14 @@ private:
 
   TTree *t_hit;
   int b_firstStrip, b_nStrips, b_chamber, b_layer, b_etaPartition;
-  float b_x, b_y, b_z;
+  float b_x, b_y, b_z, b_eta, b_mag;
 
   TTree *t_muon;
-  float b_pt, b_eta, b_phi;
+  bool b_isValid;
+  int b_id;
+  float b_pt, b_phi;
+  float b_resX, b_resY, b_resPhi;
+  float b_pullX, b_pullY;
   
   TTree *t_csc;
 
@@ -134,6 +152,7 @@ SliceTestBkgAnalysis::SliceTestBkgAnalysis(const edm::ParameterSet& iConfig)
   vertexCollection_ = consumes<reco::VertexCollection>(iConfig.getParameter<edm::InputTag>("vertexCollection"));
   lumiScalers_ = consumes<LumiScalersCollection>(iConfig.getParameter<edm::InputTag>("lumiScalers"));
   edm::ParameterSet serviceParameters = iConfig.getParameter<edm::ParameterSet>("ServiceParameters");
+  theService_ = new MuonServiceProxy(serviceParameters);
 
   h_clusterSize=fs->make<TH1D>(Form("clusterSize"),"clusterSize",100,0,100);
   h_totalStrips=fs->make<TH1D>(Form("totalStrips"),"totalStrips",200,0,200);
@@ -168,15 +187,27 @@ SliceTestBkgAnalysis::SliceTestBkgAnalysis(const edm::ParameterSet& iConfig)
   t_hit->Branch("x", &b_x, "x/F");
   t_hit->Branch("y", &b_y, "y/F");
   t_hit->Branch("z", &b_z, "z/F");
+  t_hit->Branch("eta", &b_eta, "eta/F");
+  t_hit->Branch("mag", &b_mag, "mag/F");
 
   t_csc = fs->make<TTree>("CSC", "CSC");
   t_csc->Branch("chamber", &b_chamber, "chamber/I");
   t_csc->Branch("layer", &b_layer, "layer/I");
 
   t_muon = fs->make<TTree>("muon", "muon");
+  t_muon->Branch("firstStrip", &b_firstStrip, "firstStrip/I");
+  t_muon->Branch("nStrips", &b_nStrips, "nStrips/I");
+  t_muon->Branch("chamber", &b_chamber, "chamber/I");
+  t_muon->Branch("layer", &b_layer, "layer/I");
+  t_muon->Branch("etaPartition", &b_etaPartition, "etaPartition/I");
+  t_muon->Branch("id", &b_id, "id/I");
   t_muon->Branch("pt", &b_pt, "pt/F");
   t_muon->Branch("eta", &b_eta, "eta/F");
   t_muon->Branch("phi", &b_phi, "phi/F");
+  t_muon->Branch("resX", &b_resX, "resX/F");
+  t_muon->Branch("resY", &b_resY, "resY/F");
+  t_muon->Branch("resPhi", &b_resPhi, "resPhi/F");
+  t_muon->Branch("isValid", &b_isValid, "isValid/O");
 
   for (int ichamber=26; ichamber<30;++ichamber) {
   // for (int ichamber=27; ichamber<=30;++ichamber) {
@@ -227,6 +258,10 @@ SliceTestBkgAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& i
   edm::Handle<CSCSegmentCollection> cscSegments;  
   iEvent.getByToken(cscSegments_, cscSegments);
 
+  iSetup.get<TransientTrackRecord>().get("TransientTrackBuilder",ttrackBuilder_);
+  theService_->update(iSetup);
+  auto propagator = theService_->propagator("SteppingHelixPropagatorAny");
+  
   edm::Handle<reco::VertexCollection> vertexCollection;
   iEvent.getByToken( vertexCollection_, vertexCollection );
   if(vertexCollection.isValid()) {
@@ -255,22 +290,22 @@ SliceTestBkgAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& i
 
   b_latency = -1;
 
-  for (size_t i = 0; i < muons->size(); ++i) {
-    edm::RefToBase<reco::Muon> muRef = muons->refAt(i);
-    const reco::Muon* mu = muRef.get();
+  //for (size_t i = 0; i < muons->size(); ++i) {
+  //  edm::RefToBase<reco::Muon> muRef = muons->refAt(i);
+  //  const reco::Muon* mu = muRef.get();
 
-    const reco::Track* muonTrack = 0;  
-    if ( mu->globalTrack().isNonnull() ) muonTrack = mu->globalTrack().get();
-    else if ( mu->outerTrack().isNonnull() ) muonTrack = mu->outerTrack().get();
-    if (muonTrack) {
-      b_pt = muonTrack->pt();
-      b_eta = muonTrack->eta();
-      b_phi = muonTrack->phi();
-      if (b_eta < -2.15 or b_eta > -1.6) continue;
-      t_muon->Fill();
-      b_nMuons++;
-    }
-  }
+  //  const reco::Track* muonTrack = 0;  
+  //  if ( mu->globalTrack().isNonnull() ) muonTrack = mu->globalTrack().get();
+  //  else if ( mu->outerTrack().isNonnull() ) muonTrack = mu->outerTrack().get();
+  //  if (muonTrack) {
+  //    b_pt = muonTrack->pt();
+  //    b_eta = muonTrack->eta();
+  //    b_phi = muonTrack->phi();
+  //    if (b_eta < -2.15 or b_eta > -1.6) continue;
+  //    t_muon->Fill();
+  //    b_nMuons++;
+  //  }
+  //}
   
   for (auto ch : GEMGeometry_->chambers()) {
     for(auto roll : ch->etaPartitions()) {
@@ -284,29 +319,31 @@ SliceTestBkgAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& i
       
       for (auto hit = gemRecHit; hit != recHitsRange.second; ++hit) {
 
-	h_firstStrip[rId.chamber()-1][rId.layer()-1]->Fill(hit->firstClusterStrip(), rId.roll());
-	h_clusterSize->Fill(hit->clusterSize());
-	h_bxtotal->Fill(hit->BunchX());
+        h_firstStrip[rId.chamber()-1][rId.layer()-1]->Fill(hit->firstClusterStrip(), rId.roll());
+        h_clusterSize->Fill(hit->clusterSize());
+        h_bxtotal->Fill(hit->BunchX());
 
-	for (int nstrip = hit->firstClusterStrip(); nstrip < hit->firstClusterStrip()+hit->clusterSize(); ++nstrip) {
-	  totalStrips++;
-	  h_allStrips[rId.chamber()-1][rId.layer()-1]->Fill(nstrip, rId.roll());
-	}
+        for (int nstrip = hit->firstClusterStrip(); nstrip < hit->firstClusterStrip()+hit->clusterSize(); ++nstrip) {
+          totalStrips++;
+          h_allStrips[rId.chamber()-1][rId.layer()-1]->Fill(nstrip, rId.roll());
+        }
 
-	b_firstStrip = hit->firstClusterStrip();
-	b_nStrips = hit->clusterSize();
+        b_firstStrip = hit->firstClusterStrip();
+        b_nStrips = hit->clusterSize();
 
         int vfat = (8-b_etaPartition)+8*((b_firstStrip-1)/128);
         float vfatNu = b_chamber+(b_layer-1)/2.+vfat/48.;
         h_activeLumi->Fill(b_lumi, vfatNu);
 
-	auto globalPosition = roll->toGlobal(hit->localPosition());
-	b_x = globalPosition.x();
-	b_y = globalPosition.y();
-	b_z = globalPosition.z();
+        auto globalPosition = roll->toGlobal(hit->localPosition());
+        b_x = globalPosition.x();
+        b_y = globalPosition.y();
+        b_z = globalPosition.z();
+        b_eta = globalPosition.eta();
+        b_mag = globalPosition.mag();
 
-	t_hit->Fill();
-	b_nGEMHits++;
+        t_hit->Fill();
+        b_nGEMHits++;
       }
 
       //auto gemVfatRange = gemDigisvfat->get(rId);
@@ -319,9 +356,85 @@ SliceTestBkgAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& i
       //  if (!flag) h_activeLumi_->Fill(b_lumi, b_chamber+(b_layer-1)/2.+vfat/48.);
       //}
     }
-
   }
 
+  for (size_t i = 0; i < muons->size(); ++i) {
+
+    edm::RefToBase<reco::Muon> muRef = muons->refAt(i);
+    const reco::Muon* mu = muRef.get();
+
+    // muon id
+    int muonId = 0;
+    if (mu->passed(reco::Muon::Selector::CutBasedIdTight)) muonId = 2;
+    else if (mu->passed(reco::Muon::Selector::CutBasedIdLoose)) muonId = 1;
+
+    // tight and pt > 20 muon only
+    //if (muonId != 2) continue;
+    //if (mu->pt() < 20) continue;
+    
+    const reco::Track* muonTrack = 0;  
+    if ( mu->globalTrack().isNonnull() ) muonTrack = mu->globalTrack().get();
+    else if ( mu->outerTrack().isNonnull()  ) muonTrack = mu->outerTrack().get();
+    if (!muonTrack) continue;
+    else {
+      b_id = muonId;
+      b_pt = muonTrack->pt();
+      b_eta = muonTrack->eta();
+      b_phi = muonTrack->phi();
+    }
+
+    reco::TransientTrack ttTrack = ttrackBuilder_->build(muonTrack);
+    for (auto chamber : GEMGeometry_->chambers()) {
+      b_isValid = false;
+      if (chamber->id().chamber() == 1) continue; // ignore chammber 1
+      if (mu->eta() * chamber->id().region() < 0 ) continue;
+
+      TrajectoryStateOnSurface tsos = propagator->propagate(ttTrack.outermostMeasurementState(),chamber->surface());
+      if (!tsos.isValid()) continue;
+
+      GlobalPoint tsosGP = tsos.globalPosition();
+      auto etaPart =  findEtaPartition(chamber, tsosGP);
+      if (!etaPart) continue;
+
+      auto gemid = etaPart->id();
+      auto locPos = etaPart->toLocal(tsosGP);
+      auto strip = (int) etaPart->strip(locPos);
+      
+      b_chamber = gemid.chamber();
+      b_layer = gemid.layer();
+      b_etaPartition = gemid.roll();
+
+      //Find hit
+      b_resX = 999;
+      GEMRecHit closestHit;
+      auto recHitsRange = gemRecHits->get(gemid);
+      for (auto hit = recHitsRange.first; hit != recHitsRange.second; ++hit) {
+        LocalPoint hitLocPos = hit->localPosition();
+        if ( fabs(hitLocPos.x() - locPos.x()) < fabs(b_resX) ) {
+          b_resX = hitLocPos.x() - locPos.x();
+          closestHit = (*hit);
+        }
+      }
+      if (b_resX != 999) { //We could not find hit associated with muon 
+        auto hitLocPos = closestHit.localPosition();
+        auto hitGlobPos = etaPart->toGlobal(hitLocPos);
+        b_firstStrip = closestHit.firstClusterStrip();
+        b_nStrips = closestHit.clusterSize();
+        b_resY = hitLocPos.y() - locPos.y();
+        b_resPhi = hitGlobPos.phi() - tsosGP.phi();
+
+        LocalError && locErr = tsos.localError().positionError();
+        LocalError && hitLocErr = closestHit.localPositionError();
+        b_pullX = b_resX / std::sqrt(hitLocErr.xx() + locErr.xx());
+        b_pullY = b_resY / std::sqrt(hitLocErr.yy() + locErr.yy());
+
+        b_isValid = true;
+      }
+      
+      t_muon->Fill();
+      b_nMuons++;
+    }
+  }
   for (auto ch : CSCGeometry_->chambers()) {
     CSCDetId cId = ch->id();
     // Selection for CSC chambers are in same regime with GEMINI
@@ -343,6 +456,17 @@ SliceTestBkgAnalysis::analyze(const edm::Event& iEvent, const edm::EventSetup& i
   h_totalStrips->Fill(totalStrips);
 
   t_event->Fill();
+}
+
+const GEMEtaPartition* SliceTestBkgAnalysis::findEtaPartition(const GEMChamber*& chamber, GlobalPoint& tsosGP){
+  for (auto etaPart : chamber->etaPartitions()) {
+    const LocalPoint locPos = etaPart->toLocal(tsosGP);
+    const LocalPoint locPos2D(locPos.x(), locPos.y(), 0);
+    const BoundPlane& bps(etaPart->surface());
+    if (!bps.bounds().inside(locPos2D)) continue;
+    return etaPart;
+  }
+  return nullptr;
 }
 
 void SliceTestBkgAnalysis::beginJob(){}

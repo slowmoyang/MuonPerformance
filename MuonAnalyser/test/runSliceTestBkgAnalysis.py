@@ -1,7 +1,7 @@
 import FWCore.ParameterSet.Config as cms
 from Configuration.StandardSequences.Eras import eras
 
-process = cms.Process('SliceTestAnalaysisBkg',eras.Run2_2017,eras.run3_GEM)
+process = cms.Process('SliceTestBkgAnalysis',eras.Run2_2017,eras.run3_GEM)
 
 process.load("FWCore.MessageService.MessageLogger_cfi")
 process.load('Configuration.StandardSequences.GeometryRecoDB_cff')
@@ -37,7 +37,7 @@ process.options = cms.untracked.PSet()
 
 process.TFileService = cms.Service("TFileService",fileName = cms.string("histo.root"))
 
-process.SliceTestAnalaysisBkg = cms.EDAnalyzer('SliceTestBkgAnalysis',
+process.SliceTestBkgAnalysis = cms.EDAnalyzer('SliceTestBkgAnalysis',
     process.MuonServiceProxy,
     gemRecHits = cms.InputTag("gemRecHits"),
     #cscRecHits = cms.InputTag("csc2DRecHits"),
