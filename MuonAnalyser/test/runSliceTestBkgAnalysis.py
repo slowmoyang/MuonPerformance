@@ -49,4 +49,4 @@ process.SliceTestBkgAnalysis = cms.EDAnalyzer('SliceTestBkgAnalysis',
     vertexCollection = cms.InputTag("offlinePrimaryVertices"),
     lumiScalers = cms.InputTag("scalersRawToDigi"),
 )
-process.p = cms.Path(process.SliceTestAnalaysisBkg)
+process.p = cms.Path(process.SliceTestBkgAnalysis)
