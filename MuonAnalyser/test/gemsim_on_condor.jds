@@ -1,0 +1,10 @@
+# Job description file for condor job
+executable = gemsim_on_condor.sh
+universe   = vanilla
+arguments  = $(Process)
+
+log = condor.log
+
+getenv     = True
+should_transfer_files = NO
+queue 2
